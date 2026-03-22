@@ -1,0 +1,10 @@
+node_modules
+.turbo
+dist
+build
+.DS_Store
+.env
+.env.local
+apps/api/dist
+apps/web/dist
+
