@@ -18,7 +18,7 @@ GoPlan 是一个基于 Bun Monorepo 的 AI 智能活动规划器 MVP，当前聚
 - `apps/api`：规划 API、场景引擎、外部能力适配器
 - `apps/web`：MVP 前端
 - `packages/contracts`：前后端共享类型与 Zod Schema
-- `scripts/test-ai.ts`：验证 AI 模型接口可用性
+- `scripts/verify-ai-v1.ts`：验证 AI `v1` 接口可用性
 
 ## 快速开始
 
@@ -31,7 +31,7 @@ GoPlan 是一个基于 Bun Monorepo 的 AI 智能活动规划器 MVP，当前聚
 
 - 类型检查：`bun run typecheck`
 - 构建：`bun run build`
-- AI 接口探测：`bun run test:ai`
+- AI `v1` 接口探测：`bun run test:ai`
 
 ## 架构说明
 

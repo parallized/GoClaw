@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { PhotoWeekRequest, PlanResult, RunPlanRequest, ScenarioId, ScenarioManifest } from "@goplan/contracts";
 import { PlanResultView } from "./components/PlanResult";
 import { FormSection } from "./components/FormSection";
 import { ScenarioCard } from "./components/ScenarioCard";
 import { fetchPlan, fetchScenarios } from "./lib/api";
 import { defaultPhotoForm, defaultRunForm, defaultScenarioId } from "./lib/constants";
+import { detectLocation } from "./lib/geolocation";
 
 export function App() {
   const [scenarios, setScenarios] = useState<ScenarioManifest[]>([]);
@@ -14,14 +15,42 @@ export function App() {
   const [result, setResult] = useState<PlanResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [geoStatus, setGeoStatus] = useState<"idle" | "detecting" | "done" | "failed">("idle");
+  const initializedRef = useRef(false);
+
+  /** Apply detected (or re-detected) location to both forms. */
+  function applyLocation(loc: { latitude: number; longitude: number; label?: string }, tz: string) {
+    setRunForm((prev) => ({ ...prev, location: loc, timezone: tz }));
+    setPhotoForm((prev) => ({ ...prev, location: loc, timezone: tz }));
+  }
+
+  function handleDetectLocation() {
+    setGeoStatus("detecting");
+    detectLocation()
+      .then(({ location, timezone }) => {
+        applyLocation(location, timezone);
+        setGeoStatus("done");
+      })
+      .catch(() => {
+        setGeoStatus("failed");
+      });
+  }
 
   useEffect(() => {
+    if (initializedRef.current) {
+      return;
+    }
+    initializedRef.current = true;
+
+    // Auto-detect location on first load
+    handleDetectLocation();
+
     fetchScenarios()
       .then((data) => {
         setScenarios(data);
-        const firstScenario = data[0];
-        if (firstScenario) {
-          setScenarioId((current) => data.some((item) => item.id === current) ? current : firstScenario.id);
+        const first = data[0];
+        if (first) {
+          setScenarioId((cur) => (data.some((s) => s.id === cur) ? cur : first.id));
         }
       })
       .catch((err: unknown) => {
@@ -29,15 +58,17 @@ export function App() {
       });
   }, []);
 
-  const activeScenario = useMemo(() => scenarios.find((item) => item.id === scenarioId) ?? null, [scenarios, scenarioId]);
+  const activeScenario = useMemo(
+    () => scenarios.find((s) => s.id === scenarioId) ?? null,
+    [scenarios, scenarioId],
+  );
 
   async function handleSubmit() {
     setLoading(true);
     setError(null);
     try {
       const payload = scenarioId === "run_tomorrow" ? runForm : photoForm;
-      const data = await fetchPlan(scenarioId, payload);
-      setResult(data);
+      setResult(await fetchPlan(scenarioId, payload));
     } catch (err) {
       setResult(null);
       setError(err instanceof Error ? err.message : "规划生成失败");
@@ -47,64 +78,67 @@ export function App() {
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(34,211,238,0.14),_transparent_32%),radial-gradient(circle_at_right,_rgba(217,70,239,0.12),_transparent_24%),linear-gradient(180deg,_#020617_0%,_#0f172a_45%,_#020617_100%)] text-slate-100">
-      <div className="mx-auto max-w-7xl px-6 py-10 lg:px-8">
-        <header className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <div className="mb-3 inline-flex rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-xs text-cyan-200">
-              AI 智能活动规划器 MVP
-            </div>
-            <h1 className="text-4xl font-bold tracking-tight text-white">GoPlan</h1>
-            <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300 md:text-base">
-              用真实天气、真实 POI 和真实路径数据，为你生成跑步路线与最近一周拍照计划。
-            </p>
+    <div className="mx-auto max-w-5xl px-6 py-16 lg:px-8">
+      {/* ── Header ── */}
+      <header className="mb-16">
+        <p className="text-tertiary mb-4 text-sm tracking-widest uppercase">智能活动规划</p>
+        <h1 className="font-serif text-5xl font-bold leading-tight tracking-tight">GoPlan</h1>
+        <p className="text-secondary mt-4 max-w-2xl text-lg leading-relaxed">
+          基于真实天气、地点与路线数据，为你的跑步和摄影做出优雅的规划。
+        </p>
+        {activeScenario && (
+          <div className="mt-6 inline-flex items-center gap-2 rounded-1.5 py-1.5 px-3 text-sm bg-surface-gray text-secondary">
+            当前：<span className="text-primary font-medium">{activeScenario.title}</span>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
-            当前场景：<span className="font-medium text-white">{activeScenario?.title ?? "加载中"}</span>
-          </div>
-        </header>
+        )}
+      </header>
 
-        <section className="grid gap-4 lg:grid-cols-2">
-          {scenarios.map((scenario) => (
-            <ScenarioCard key={scenario.id} scenario={scenario} active={scenario.id === scenarioId} onSelect={setScenarioId} />
+      {/* ── Scenario selector ── */}
+      <section aria-label="场景选择" className="mb-14">
+        <h2 className="font-serif mb-6 text-xl font-semibold">选择场景</h2>
+        <div className="grid gap-4 sm:grid-cols-2" role="listbox" aria-label="场景列表">
+          {scenarios.map((s) => (
+            <ScenarioCard key={s.id} scenario={s} active={s.id === scenarioId} onSelect={setScenarioId} />
           ))}
-        </section>
-
-        <div className="mt-8 grid gap-8 xl:grid-cols-[420px_minmax(0,1fr)]">
-          <div className="space-y-6">
-            <FormSection
-              scenarioId={scenarioId}
-              runForm={runForm}
-              photoForm={photoForm}
-              onRunChange={setRunForm}
-              onPhotoChange={setPhotoForm}
-            />
-
-            <section className="rounded-3xl border border-white/10 bg-white/5 p-6">
-              <button
-                type="button"
-                onClick={() => void handleSubmit()}
-                disabled={loading}
-                className="w-full rounded-2xl bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {loading ? "规划生成中..." : "生成完整规划"}
-              </button>
-              <div className="mt-3 text-xs text-slate-400">
-                会调用 `/api/scenarios` 与 `/api/plans/:scenarioId`，结果直接按结构化 JSON 渲染。
-              </div>
-            </section>
-          </div>
-
-          <section className="space-y-4">
-            {error ? (
-              <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 p-4 text-sm text-rose-100">
-                {error}
-              </div>
-            ) : null}
-            <PlanResultView plan={result} />
-          </section>
         </div>
+      </section>
+
+      <hr className="border-none border-t border-t-solid border-t-edge-light m-0 mb-14" />
+
+      {/* ── Form + Result ── */}
+      <div className="grid gap-14 xl:grid-cols-[400px_minmax(0,1fr)]">
+        {/* Left: form */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void handleSubmit();
+          }}
+          className="space-y-8"
+        >
+          <FormSection
+            scenarioId={scenarioId}
+            runForm={runForm}
+            photoForm={photoForm}
+            onRunChange={setRunForm}
+            onPhotoChange={setPhotoForm}
+            geoStatus={geoStatus}
+            onRelocate={handleDetectLocation}
+          />
+          <button type="submit" disabled={loading} className="n-btn-submit">
+            {loading ? "规划生成中…" : "生成规划"}
+          </button>
+        </form>
+
+        {/* Right: result */}
+        <section aria-label="规划结果" aria-live="polite">
+          {error && (
+            <div className="rounded-2 border border-solid border-error-border bg-error-bg text-error-text py-3 px-4 text-sm mb-6" role="alert">
+              {error}
+            </div>
+          )}
+          <PlanResultView plan={result} />
+        </section>
       </div>
-    </main>
+    </div>
   );
 }

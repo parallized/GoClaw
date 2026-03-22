@@ -7,7 +7,7 @@ import {
 } from "@goplan/contracts";
 import type { PointOfInterest } from "../service-types";
 import type { ScenarioDefinition, ScenarioPlannerContext } from "../scenario-definition";
-import { extractJsonBlock, safeJsonParse } from "../../lib/ai";
+import { extractJsonBlock, safeJsonParse } from "../../lib/json-parser";
 import { AppError } from "../../lib/errors";
 import { scoreRunHour, summarizeDailyWeather } from "../../lib/weather";
 
@@ -82,7 +82,11 @@ async function loadRunPois(context: ScenarioPlannerContext, input: RunPlanReques
     return primary;
   }
 
-  return context.poiProvider.searchRunPois(input.location, Math.min(primaryRadius + 4000, 15000));
+  try {
+    return await context.poiProvider.searchRunPois(input.location, Math.min(primaryRadius + 4000, 15000));
+  } catch {
+    return primary;
+  }
 }
 
 async function enhancePlan(context: ScenarioPlannerContext, plan: RunPlan): Promise<RunPlan> {
@@ -200,8 +204,9 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
       })
     );
 
-    const selectedRoutes = routeCandidates
-      .filter((item): item is NonNullable<typeof item> => item !== null)
+    const successfulRoutes = routeCandidates.filter((item): item is NonNullable<typeof item> => item !== null);
+
+    const selectedRoutes = successfulRoutes
       .filter((item) => item.distanceKm >= Math.max(1.5, preferredMin * 0.7) && item.distanceKm <= preferredMax * 1.5)
       .sort((left, right) => right.score - left.score)
       .slice(0, 3)
@@ -217,6 +222,10 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
       }));
 
     if (selectedRoutes.length === 0) {
+      if (successfulRoutes.length === 0) {
+        throw new AppError("路径服务当前较繁忙，请稍后重试。", 503);
+      }
+
       throw new AppError("附近真实路线与当前里程偏好不匹配，请放宽距离后重试。", 404);
     }
 

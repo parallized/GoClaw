@@ -1,4 +1,4 @@
-import { type ScenarioId, scenarioCatalog } from "@goplan/contracts";
+import { coordinatesSchema, type ScenarioId, scenarioCatalog } from "@goplan/contracts";
 import { Elysia } from "elysia";
 import type { ScenarioPlannerContext } from "../domain/scenario-definition";
 import { scenarioMap } from "../domain/scenarios";
@@ -8,6 +8,46 @@ export function createPlanRoutes(context: ScenarioPlannerContext) {
   return new Elysia({ prefix: "/api" })
     .get("/health", () => ({ ok: true, service: "goplan-api" }))
     .get("/scenarios", () => ({ ok: true, data: scenarioCatalog }))
+    .get("/location-label", async ({ query, set }) => {
+      try {
+        const location = coordinatesSchema.parse({
+          latitude: Number(query.latitude),
+          longitude: Number(query.longitude)
+        });
+        const result = await context.geocodingProvider.reverseGeocode(location);
+        return { ok: true, data: result };
+      } catch (error) {
+        if (error instanceof AppError) {
+          set.status = error.status;
+          return {
+            ok: false,
+            error: {
+              message: error.message,
+              issues: error.issues
+            }
+          };
+        }
+
+        if (error && typeof error === "object" && "issues" in error) {
+          set.status = 400;
+          return {
+            ok: false,
+            error: {
+              message: "请求参数校验失败",
+              issues: error
+            }
+          };
+        }
+
+        set.status = 500;
+        return {
+          ok: false,
+          error: {
+            message: toErrorMessage(error)
+          }
+        };
+      }
+    })
     .post("/plans/:scenarioId", async ({ params, body, set }) => {
       try {
         const scenarioId = params.scenarioId as ScenarioId;

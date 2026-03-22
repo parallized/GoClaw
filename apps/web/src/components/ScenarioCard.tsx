@@ -10,32 +10,30 @@ export function ScenarioCard({ scenario, active, onSelect }: ScenarioCardProps) 
   return (
     <button
       type="button"
+      role="option"
+      aria-selected={active}
       onClick={() => onSelect(scenario.id)}
-      className={[
-        "w-full rounded-2xl border p-5 text-left transition",
-        active
-          ? "border-cyan-400 bg-cyan-500/10 shadow-[0_0_0_1px_rgba(34,211,238,0.3)]"
-          : "border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/8"
-      ].join(" ")}
+      className="n-scenario-card"
     >
-      <div className="mb-3 flex items-center justify-between gap-3">
+      <div className="mb-3 flex items-start justify-between gap-3">
         <div>
-          <div className="text-lg font-semibold text-white">{scenario.title}</div>
-          <div className="mt-1 text-sm text-slate-300">{scenario.description}</div>
+          <div className="font-serif text-lg font-semibold">{scenario.title}</div>
+          <div className="text-secondary mt-1.5 text-sm leading-relaxed">{scenario.description}</div>
         </div>
-        <div className="rounded-full bg-white/8 px-3 py-1 text-xs text-slate-200">
-          {scenario.estimatedLatencyMs}ms
+        <div className="inline-flex items-center gap-2 rounded-1.5 py-1.5 px-3 text-xs shrink-0 bg-surface-gray text-secondary">
+          ~{(scenario.estimatedLatencyMs / 1000).toFixed(1)}s
         </div>
       </div>
-      <div className="mb-4 flex flex-wrap gap-2">
-        {scenario.capabilities.map((item) => (
-          <span key={item} className="rounded-full bg-white/6 px-2.5 py-1 text-xs text-slate-200">
-            {item}
+
+      <div className="mb-4 flex flex-wrap gap-1.5">
+        {scenario.capabilities.map((cap) => (
+          <span key={cap} className="inline-flex items-center rounded-1.5 py-0.5 px-2 text-xs leading-4 bg-[var(--notion-tag-blue-bg)] text-[var(--notion-tag-blue-text)]">
+            {cap}
           </span>
         ))}
       </div>
-      <div className="text-sm font-medium text-cyan-300">{scenario.cta}</div>
+
+      <div className="text-accent-blue text-sm font-medium">{scenario.cta} →</div>
     </button>
   );
 }
-

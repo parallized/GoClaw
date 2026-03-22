@@ -1,4 +1,5 @@
 export class AppError extends Error {
+  retryAfterMs?: number;
   constructor(message: string, readonly status = 400, readonly issues?: unknown) {
     super(message);
     this.name = "AppError";

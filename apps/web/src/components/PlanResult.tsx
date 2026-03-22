@@ -2,40 +2,55 @@ import type { PhotoWeekPlan, PlanResult, RunPlan } from "@goplan/contracts";
 
 function RunPlanView({ plan }: { plan: RunPlan }) {
   return (
-    <div className="space-y-4">
-      <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/8 p-4">
-        <div className="text-sm text-emerald-200">最佳出发时间</div>
-        <div className="mt-1 text-2xl font-semibold text-white">{plan.bestTime}</div>
-        <div className="mt-2 text-sm text-slate-200">{plan.reason}</div>
-        <div className="mt-2 text-xs text-slate-400">{plan.city} · {plan.targetDate} · {plan.weatherSummary}</div>
+    <div className="space-y-6">
+      {/* Best time highlight */}
+      <div className="border border-solid border-edge rounded-2 p-5 bg-surface-hover">
+        <div className="text-accent-green text-xs font-medium uppercase tracking-wide">最佳出发时间</div>
+        <div className="font-serif mt-2 text-3xl font-bold">{plan.bestTime}</div>
+        <p className="text-secondary mt-2 text-sm leading-relaxed">{plan.reason}</p>
+        <div className="text-tertiary mt-3 text-xs">
+          {plan.city} · {plan.targetDate} · {plan.weatherSummary}
+        </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-3">
-        {plan.routes.map((route) => (
-          <article key={route.name} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <div className="text-base font-semibold text-white">{route.name}</div>
-            <div className="mt-2 flex gap-2 text-xs text-slate-300">
-              <span>{route.distanceKm} km</span>
-              <span>{route.estTimeMin} 分钟</span>
-            </div>
-            <div className="mt-3 text-sm text-slate-200">{route.why}</div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {route.tags.map((tag) => (
-                <span key={tag} className="rounded-full bg-white/6 px-2 py-1 text-xs text-slate-300">{tag}</span>
-              ))}
-            </div>
-            <a className="mt-4 inline-flex text-sm text-cyan-300 hover:text-cyan-200" href={route.navigationUrl} target="_blank" rel="noreferrer">
-              打开导航
-            </a>
-          </article>
-        ))}
-      </div>
+      {/* Routes */}
+      <section>
+        <h3 className="font-serif mb-4 text-lg font-semibold">推荐路线</h3>
+        <div className="space-y-3">
+          {plan.routes.map((route, idx) => (
+            <article key={route.name} className="border border-solid border-edge rounded-2 p-4 bg-surface">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="flex items-center justify-center w-6 h-6 shrink-0 rounded-1.5 text-xs font-medium text-white bg-primary">{idx + 1}</span>
+                  <span className="font-medium">{route.name}</span>
+                </div>
+                <div className="text-tertiary flex gap-3 text-xs">
+                  <span>{route.distanceKm} km</span>
+                  <span>{route.estTimeMin} 分钟</span>
+                </div>
+              </div>
 
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-        <div className="text-sm font-medium text-white">注意事项</div>
-        <ul className="mt-3 space-y-2 text-sm text-slate-200">
+              <p className="text-secondary mt-2.5 text-sm leading-relaxed">{route.why}</p>
+
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {route.tags.map((tag) => (
+                  <span key={tag} className="inline-flex items-center rounded-1.5 py-0.5 px-2 text-xs leading-4 bg-[var(--notion-tag-gray-bg)] text-[var(--notion-tag-gray-text)]">{tag}</span>
+                ))}
+                <a className="text-xs font-medium text-accent-blue no-underline ml-auto transition-opacity hover:opacity-75" href={route.navigationUrl} target="_blank" rel="noreferrer">
+                  打开导航 →
+                </a>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      {/* Tips */}
+      <div className="border border-solid border-edge rounded-2 p-4 bg-surface">
+        <h3 className="mb-3 text-sm font-semibold">注意事项</h3>
+        <ul className="list-none m-0 p-0 flex flex-col gap-1.5 text-sm text-secondary">
           {plan.tips.map((tip) => (
-            <li key={tip}>- {tip}</li>
+            <li key={tip} className="flex gap-2"><span className="text-tertiary">·</span>{tip}</li>
           ))}
         </ul>
       </div>
@@ -45,39 +60,44 @@ function RunPlanView({ plan }: { plan: RunPlan }) {
 
 function PhotoWeekView({ plan }: { plan: PhotoWeekPlan }) {
   return (
-    <div className="space-y-4">
-      <div className="rounded-2xl border border-fuchsia-400/20 bg-fuchsia-500/8 p-4">
-        <div className="text-sm text-fuchsia-200">拍照周计划</div>
-        <div className="mt-1 text-2xl font-semibold text-white">{plan.city}</div>
-        <div className="mt-2 text-sm text-slate-200">{plan.rangeLabel}</div>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="border border-solid border-edge rounded-2 p-5 bg-surface-hover">
+        <div className="text-accent-pink text-xs font-medium uppercase tracking-wide">拍照周计划</div>
+        <div className="font-serif mt-2 text-3xl font-bold">{plan.city}</div>
+        <p className="text-secondary mt-2 text-sm">{plan.rangeLabel}</p>
       </div>
 
-      <div className="space-y-4">
+      {/* Days */}
+      <div className="space-y-5">
         {plan.days.map((day) => (
-          <section key={day.date} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <div className="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
-              <div>
-                <div className="text-lg font-semibold text-white">{day.date}</div>
-                <div className="text-sm text-slate-300">{day.weather}</div>
-              </div>
-            </div>
-            <div className="mt-4 grid gap-4 xl:grid-cols-2">
+          <section key={day.date} className="border border-solid border-edge rounded-2 p-5 bg-surface">
+            <header className="mb-4">
+              <h3 className="font-serif text-lg font-semibold">{day.date}</h3>
+              <div className="text-secondary mt-1 text-sm">{day.weather}</div>
+            </header>
+
+            <div className="grid gap-4 lg:grid-cols-2">
               {day.spots.map((spot) => (
-                <article key={`${day.date}-${spot.name}`} className="rounded-2xl border border-white/10 bg-slate-950/40 p-4">
-                  <div className="text-base font-semibold text-white">{spot.name}</div>
-                  <div className="mt-2 text-sm text-slate-200">{spot.reason}</div>
-                  <div className="mt-3 text-sm text-slate-300">最佳时段：{spot.bestTime}</div>
-                  <div className="mt-2 text-sm text-slate-300">拍法：{spot.way}</div>
-                  <div className="mt-2 text-sm text-slate-300">参数：{spot.cameraSummary}</div>
-                  <div className="mt-2 text-sm text-slate-300">提示：{spot.tip}</div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {spot.categories.map((item) => (
-                      <span key={item} className="rounded-full bg-white/6 px-2 py-1 text-xs text-slate-300">{item}</span>
-                    ))}
+                <article key={`${day.date}-${spot.name}`} className="border border-solid border-edge rounded-2 p-4 bg-surface-hover">
+                  <div className="font-medium">{spot.name}</div>
+                  <p className="text-secondary mt-1.5 text-sm leading-relaxed">{spot.reason}</p>
+
+                  <div className="mt-3 space-y-1">
+                    <div className="text-sm text-secondary"><span className="text-tertiary mr-2">时间</span>{spot.bestTime}</div>
+                    <div className="text-sm text-secondary"><span className="text-tertiary mr-2">拍法</span>{spot.way}</div>
+                    <div className="text-sm text-secondary"><span className="text-tertiary mr-2">参数</span>{spot.cameraSummary}</div>
+                    <div className="text-sm text-secondary"><span className="text-tertiary mr-2">提示</span>{spot.tip}</div>
                   </div>
-                  <a className="mt-4 inline-flex text-sm text-cyan-300 hover:text-cyan-200" href={spot.navigationUrl} target="_blank" rel="noreferrer">
-                    打开导航
-                  </a>
+
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {spot.categories.map((cat) => (
+                      <span key={cat} className="inline-flex items-center rounded-1.5 py-0.5 px-2 text-xs leading-4 bg-[var(--notion-tag-pink-bg)] text-[var(--notion-tag-pink-text)]">{cat}</span>
+                    ))}
+                    <a className="text-xs font-medium text-accent-blue no-underline ml-auto transition-opacity hover:opacity-75" href={spot.navigationUrl} target="_blank" rel="noreferrer">
+                      打开导航 →
+                    </a>
+                  </div>
                 </article>
               ))}
             </div>
@@ -85,11 +105,12 @@ function PhotoWeekView({ plan }: { plan: PhotoWeekPlan }) {
         ))}
       </div>
 
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-        <div className="text-sm font-medium text-white">全局建议</div>
-        <ul className="mt-3 space-y-2 text-sm text-slate-200">
+      {/* Global tips */}
+      <div className="border border-solid border-edge rounded-2 p-4 bg-surface">
+        <h3 className="mb-3 text-sm font-semibold">全局建议</h3>
+        <ul className="list-none m-0 p-0 flex flex-col gap-1.5 text-sm text-secondary">
           {plan.tips.map((tip) => (
-            <li key={tip}>- {tip}</li>
+            <li key={tip} className="flex gap-2"><span className="text-tertiary">·</span>{tip}</li>
           ))}
         </ul>
       </div>
@@ -100,12 +121,11 @@ function PhotoWeekView({ plan }: { plan: PhotoWeekPlan }) {
 export function PlanResultView({ plan }: { plan: PlanResult | null }) {
   if (!plan) {
     return (
-      <div className="rounded-3xl border border-dashed border-white/10 bg-white/3 p-8 text-center text-slate-400">
-        选择场景并提交参数后，这里会展示结构化规划结果。
+      <div className="border border-dashed border-edge rounded-2 p-10 text-center text-sm text-tertiary">
+        选择场景并提交参数后，这里会展示规划结果。
       </div>
     );
   }
 
   return plan.type === "run_tomorrow" ? <RunPlanView plan={plan} /> : <PhotoWeekView plan={plan} />;
 }
-

@@ -1,4 +1,4 @@
-import { type PlanResult, type ScenarioId, type ScenarioManifest } from "@goplan/contracts";
+import { type LocationLabel, type PlanResult, type ScenarioId, type ScenarioManifest } from "@goplan/contracts";
 
 interface ApiErrorShape {
   ok: false;
@@ -34,10 +34,17 @@ export function fetchScenarios(): Promise<ScenarioManifest[]> {
   return request<ScenarioManifest[]>("/api/scenarios");
 }
 
+export function fetchLocationLabel(latitude: number, longitude: number): Promise<LocationLabel> {
+  const params = new URLSearchParams({
+    latitude: String(latitude),
+    longitude: String(longitude)
+  });
+  return request<LocationLabel>(`/api/location-label?${params.toString()}`);
+}
+
 export function fetchPlan<TInput>(scenarioId: ScenarioId, payload: TInput): Promise<PlanResult> {
   return request<PlanResult>(`/api/plans/${scenarioId}`, {
     method: "POST",
     body: JSON.stringify(payload)
   });
 }
-

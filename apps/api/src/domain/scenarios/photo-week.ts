@@ -8,7 +8,7 @@ import {
 } from "@goplan/contracts";
 import type { DailyWeatherPoint, PointOfInterest } from "../service-types";
 import type { ScenarioDefinition, ScenarioPlannerContext } from "../scenario-definition";
-import { extractJsonBlock, safeJsonParse } from "../../lib/ai";
+import { extractJsonBlock, safeJsonParse } from "../../lib/json-parser";
 import { AppError } from "../../lib/errors";
 import { classifyLight, getWeatherLabel, summarizeDailyWeather } from "../../lib/weather";
 
@@ -119,7 +119,11 @@ async function loadPhotoPois(context: ScenarioPlannerContext, location: { latitu
     return primary;
   }
 
-  return context.poiProvider.searchPhotoPois(location, Math.min(radiusMeters + 6000, 30000));
+  try {
+    return await context.poiProvider.searchPhotoPois(location, Math.min(radiusMeters + 6000, 30000));
+  } catch {
+    return primary;
+  }
 }
 
 function scorePoi(day: DailyWeatherPoint, poi: PointOfInterest, preferredThemes: Set<PhotoTheme>, usedTimes: number): number {

@@ -1,26 +1,17 @@
 import type { AiProvider } from "../../domain/service-types";
 import { env } from "../../config/env";
 import { AppError } from "../../lib/errors";
-import { fetchJson } from "../../lib/http";
+import { buildAiApiUrl } from "./api-url";
 
-interface ChatCompletionResponse {
+const USER_AGENT = "GoPlan/0.1 (+https://local.dev)";
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 1_000;
+
+interface StreamChunk {
   choices?: Array<{
-    message?: {
-      content?: string | Array<{ type: string; text?: string }>;
-    };
+    delta?: { content?: string };
+    finish_reason?: string | null;
   }>;
-}
-
-function normalizeContent(content: string | Array<{ type: string; text?: string }> | undefined): string {
-  if (typeof content === "string") {
-    return content;
-  }
-
-  if (Array.isArray(content)) {
-    return content.map((item) => item.text ?? "").join("\n").trim();
-  }
-
-  return "";
 }
 
 export class OpenAiCompatibleProvider implements AiProvider {
@@ -31,29 +22,122 @@ export class OpenAiCompatibleProvider implements AiProvider {
       throw new AppError("未配置 AI_API_KEY", 500);
     }
 
-    const response = await fetchJson<ChatCompletionResponse>(`${env.aiBaseUrl}/chat/completions`, {
-      method: "POST",
-      timeoutMs: env.aiTimeoutMs,
-      headers: {
-        authorization: `Bearer ${env.aiApiKey}`,
-        "content-type": "application/json"
-      },
-      body: JSON.stringify({
-        model: env.aiModel,
-        temperature: input.temperature ?? 0.3,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: input.system },
-          { role: "user", content: input.user }
-        ]
-      })
-    });
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), env.aiTimeoutMs);
 
-    const content = normalizeContent(response.choices?.[0]?.message?.content);
-    if (!content) {
-      throw new AppError("AI 服务未返回内容", 502);
+      try {
+        const response = await fetch(buildAiApiUrl(env.aiBaseUrl, "/chat/completions"), {
+          method: "POST",
+          signal: controller.signal,
+          headers: {
+            "authorization": `Bearer ${env.aiApiKey}`,
+            "content-type": "application/json",
+            "user-agent": USER_AGENT
+          },
+          body: JSON.stringify({
+            model: env.aiModel,
+            temperature: input.temperature ?? 0.3,
+            stream: true,
+            response_format: { type: "json_object" },
+            messages: [
+              { role: "system", content: input.system },
+              { role: "user", content: input.user }
+            ]
+          })
+        });
+
+        if (response.status === 429 && attempt < MAX_RETRIES) {
+          const ra = response.headers.get("retry-after");
+          const delaySecs = ra ? Number(ra) : undefined;
+          const delayMs = (delaySecs && Number.isFinite(delaySecs))
+            ? delaySecs * 1000
+            : BASE_DELAY_MS * 2 ** attempt;
+          await new Promise(r => setTimeout(r, delayMs));
+          continue;
+        }
+
+        if (!response.ok) {
+          throw new AppError(`请求外部服务失败：${response.status} ${response.statusText}`, 502);
+        }
+
+        const content = await this.readStream(response);
+        if (!content) {
+          throw new AppError("AI 服务未返回内容", 502);
+        }
+
+        return content;
+      } catch (error) {
+        lastError = error;
+        if (error instanceof DOMException && error.name === "AbortError") {
+          if (attempt < MAX_RETRIES) {
+            await new Promise(r => setTimeout(r, BASE_DELAY_MS * 2 ** attempt));
+            continue;
+          }
+          throw new AppError("请求外部服务超时", 504);
+        }
+        throw error;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+    throw lastError;
+  }
+
+  private async readStream(response: Response): Promise<string> {
+    const body = response.body;
+    if (!body) {
+      throw new AppError("AI 服务返回空响应体", 502);
     }
 
-    return content;
+    const reader = body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let result = "";
+    let insideThink = false;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith("data: ")) continue;
+
+          const data = trimmed.slice(6);
+          if (data === "[DONE]") continue;
+
+          try {
+            const chunk: StreamChunk = JSON.parse(data);
+            const delta = chunk.choices?.[0]?.delta?.content ?? "";
+
+            // Skip <think>...</think> blocks from reasoning models
+            for (let i = 0; i < delta.length; i++) {
+              if (!insideThink && delta.startsWith("<think>", i)) {
+                insideThink = true;
+                i += 6; // skip past "<think>" (loop will add 1 more)
+              } else if (insideThink && delta.startsWith("</think>", i)) {
+                insideThink = false;
+                i += 7; // skip past "</think>"
+              } else if (!insideThink) {
+                result += delta[i];
+              }
+            }
+          } catch {
+            // skip malformed chunks
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    return result.trim();
   }
 }

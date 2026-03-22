@@ -1,6 +1,7 @@
 import type { Coordinates, PhotoTheme, RunTerrain } from "@goplan/contracts";
 import type { PoiProvider, PointOfInterest } from "../../domain/service-types";
 import { haversineDistanceMeters, uniqueByName } from "../../lib/geo";
+import { AppError } from "../../lib/errors";
 import { fetchJson } from "../../lib/http";
 
 interface OverpassElement {
@@ -14,6 +15,36 @@ interface OverpassElement {
 
 interface OverpassResponse {
   elements: OverpassElement[];
+}
+
+const CACHE_TTL_MS = 20 * 60_000;
+const cache = new Map<string, { expiresAt: number; value: PointOfInterest[] }>();
+const pending = new Map<string, Promise<PointOfInterest[]>>();
+
+function cacheKey(kind: "run" | "photo", location: Coordinates, radiusMeters: number): string {
+  return `${kind}:${location.latitude.toFixed(3)}:${location.longitude.toFixed(3)}:${radiusMeters}`;
+}
+
+function readCache(key: string, allowStale = false): PointOfInterest[] | null {
+  const item = cache.get(key);
+  if (!item) {
+    return null;
+  }
+
+  if (allowStale || item.expiresAt > Date.now()) {
+    return item.value;
+  }
+
+  cache.delete(key);
+  return null;
+}
+
+function writeCache(key: string, value: PointOfInterest[]): PointOfInterest[] {
+  cache.set(key, {
+    expiresAt: Date.now() + CACHE_TTL_MS,
+    value
+  });
+  return value;
 }
 
 function getCoordinates(element: OverpassElement): Coordinates | null {
@@ -89,7 +120,8 @@ async function query(query: string): Promise<OverpassElement[]> {
     method: "POST",
     headers: { "content-type": "text/plain;charset=UTF-8" },
     body: query,
-    timeoutMs: 25_000
+    timeoutMs: 25_000,
+    retries: 1
   });
   return response.elements;
 }
@@ -98,6 +130,17 @@ export class OverpassPoiProvider implements PoiProvider {
   readonly name = "overpass";
 
   async searchRunPois(location: Coordinates, radiusMeters: number): Promise<PointOfInterest[]> {
+    const key = cacheKey("run", location, radiusMeters);
+    const cached = readCache(key);
+    if (cached) {
+      return cached;
+    }
+
+    const inflight = pending.get(key);
+    if (inflight) {
+      return inflight;
+    }
+
     const queryText = `
 [out:json][timeout:25];
 (
@@ -111,15 +154,46 @@ export class OverpassPoiProvider implements PoiProvider {
 out center tags 80;
 `;
 
-    return uniqueByName(
-      (await query(queryText))
-        .map((element) => normalize(location, "run", element))
-        .filter((item): item is PointOfInterest => item !== null)
-        .sort((left, right) => left.distanceMeters - right.distanceMeters)
-    );
+    const request = (async () => {
+      try {
+        return writeCache(key, uniqueByName(
+          (await query(queryText))
+            .map((element) => normalize(location, "run", element))
+            .filter((item): item is PointOfInterest => item !== null)
+            .sort((left, right) => left.distanceMeters - right.distanceMeters)
+        ));
+      } catch (error) {
+        const stale = readCache(key, true);
+        if (stale) {
+          return stale;
+        }
+
+        if (error instanceof AppError && error.status === 429) {
+          throw new AppError("地点服务当前较繁忙，请稍后重试。", 503);
+        }
+
+        throw error;
+      } finally {
+        pending.delete(key);
+      }
+    })();
+
+    pending.set(key, request);
+    return request;
   }
 
   async searchPhotoPois(location: Coordinates, radiusMeters: number): Promise<PointOfInterest[]> {
+    const key = cacheKey("photo", location, radiusMeters);
+    const cached = readCache(key);
+    if (cached) {
+      return cached;
+    }
+
+    const inflight = pending.get(key);
+    if (inflight) {
+      return inflight;
+    }
+
     const queryText = `
 [out:json][timeout:25];
 (
@@ -138,11 +212,31 @@ out center tags 80;
 out center tags 120;
 `;
 
-    return uniqueByName(
-      (await query(queryText))
-        .map((element) => normalize(location, "photo", element))
-        .filter((item): item is PointOfInterest => item !== null)
-        .sort((left, right) => left.distanceMeters - right.distanceMeters)
-    );
+    const request = (async () => {
+      try {
+        return writeCache(key, uniqueByName(
+          (await query(queryText))
+            .map((element) => normalize(location, "photo", element))
+            .filter((item): item is PointOfInterest => item !== null)
+            .sort((left, right) => left.distanceMeters - right.distanceMeters)
+        ));
+      } catch (error) {
+        const stale = readCache(key, true);
+        if (stale) {
+          return stale;
+        }
+
+        if (error instanceof AppError && error.status === 429) {
+          throw new AppError("地点服务当前较繁忙，请稍后重试。", 503);
+        }
+
+        throw error;
+      } finally {
+        pending.delete(key);
+      }
+    })();
+
+    pending.set(key, request);
+    return request;
   }
 }

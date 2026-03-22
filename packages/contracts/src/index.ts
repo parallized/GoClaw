@@ -151,6 +151,13 @@ export const apiErrorSchema = z.object({
 });
 export type ApiError = z.infer<typeof apiErrorSchema>;
 
+export const locationLabelSchema = z.object({
+  city: z.string(),
+  district: z.string().optional(),
+  displayName: z.string()
+});
+export type LocationLabel = z.infer<typeof locationLabelSchema>;
+
 export const scenarioManifestSchema = z.object({
   id: scenarioIdSchema,
   title: z.string(),

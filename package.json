@@ -11,6 +11,7 @@
     "dev:web": "bun run --cwd apps/web dev",
     "typecheck": "bun run --cwd packages/contracts typecheck && bun run --cwd apps/api typecheck && bun run --cwd apps/web typecheck",
     "build": "bun run --cwd apps/api build && bun run --cwd apps/web build",
-    "test:ai": "bun run scripts/test-ai.ts"
+    "test:ai": "bun run scripts/verify-ai-v1.ts",
+    "test": "bun test apps/api/src/lib/json-parser.test.ts apps/api/src/infrastructure/ai/api-url.test.ts apps/api/src/infrastructure/ai/openai-compatible.test.ts"
   }
 }
