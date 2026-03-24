@@ -71,6 +71,23 @@ export const runRouteSchema = z.object({
 });
 export type RunRoute = z.infer<typeof runRouteSchema>;
 
+export const planProcessStepSchema = z.object({
+  title: z.string(),
+  detail: z.string(),
+  provider: z.string().optional(),
+  outcome: z.enum(["success", "fallback", "skipped"])
+});
+export type PlanProcessStep = z.infer<typeof planProcessStepSchema>;
+
+export const planMetaSchema = z.object({
+  weatherProvider: z.string(),
+  poiProvider: z.string(),
+  routingProvider: z.string(),
+  aiEnhanced: z.boolean(),
+  process: z.array(planProcessStepSchema).min(1)
+});
+export type PlanMeta = z.infer<typeof planMetaSchema>;
+
 export const runPlanSchema = z.object({
   type: z.literal("run_tomorrow"),
   city: z.string(),
@@ -80,12 +97,7 @@ export const runPlanSchema = z.object({
   reason: z.string(),
   routes: z.array(runRouteSchema).min(1),
   tips: z.array(z.string()).min(1),
-  meta: z.object({
-    weatherProvider: z.string(),
-    poiProvider: z.string(),
-    routingProvider: z.string(),
-    aiEnhanced: z.boolean()
-  })
+  meta: planMetaSchema
 });
 export type RunPlan = z.infer<typeof runPlanSchema>;
 
@@ -122,12 +134,7 @@ export const photoWeekPlanSchema = z.object({
   rangeLabel: z.string(),
   days: z.array(photoDayPlanSchema).min(1),
   tips: z.array(z.string()).min(1),
-  meta: z.object({
-    weatherProvider: z.string(),
-    poiProvider: z.string(),
-    routingProvider: z.string(),
-    aiEnhanced: z.boolean()
-  })
+  meta: planMetaSchema
 });
 export type PhotoWeekPlan = z.infer<typeof photoWeekPlanSchema>;
 

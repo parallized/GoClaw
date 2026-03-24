@@ -11,7 +11,7 @@ GoPlan 是一个基于 Bun Monorepo 的 AI 智能活动规划器 MVP，当前聚
 - 前端：React + TypeScript + Vite + UnoCSS
 - 后端：Elysia + TypeScript
 - 共享契约：`@goplan/contracts`
-- 实时能力接入：Open-Meteo、Overpass、OSRM、Nominatim、OpenAI 兼容大模型接口
+- 实时能力接入：Open-Meteo、Amap Web Service、Overpass、OSRM、Nominatim、OpenAI 兼容大模型接口
 
 ## 目录结构
 
@@ -32,6 +32,18 @@ GoPlan 是一个基于 Bun Monorepo 的 AI 智能活动规划器 MVP，当前聚
 - 类型检查：`bun run typecheck`
 - 构建：`bun run build`
 - AI `v1` 接口探测：`bun run test:ai`
+
+## 国内地点服务（推荐）
+
+- 如果配置了 `AMAP_WEB_SERVICE_KEY`，后端会优先使用高德 Web 服务做逆地理编码与周边 POI 搜索。
+- 当高德服务出现临时限流或短时不可用时，会自动回退到现有 `Nominatim / Overpass` 链路，尽量保证可用性。
+- 如果暂时没有配置高德 Key，系统会继续使用现有公共地点服务，不会影响本地开发启动。
+- 可选环境变量：`AMAP_WEB_SERVICE_KEY`、`AMAP_WEB_SERVICE_BASE_URL`。
+
+### 地点服务备用节点
+
+- 默认会按顺序尝试多个 `Overpass` 节点，降低单一公共实例限流或短时不可用导致的失败概率。
+- 如需自定义，可通过 `POI_OVERPASS_ENDPOINTS` 传入英文逗号分隔的节点列表。
 
 ## 架构说明
 
@@ -56,9 +68,9 @@ GoPlan 是一个基于 Bun Monorepo 的 AI 智能活动规划器 MVP，当前聚
 后端将天气、POI、路径、地理编码、导航链接、AI 增强拆成独立 Provider：
 
 - Weather Provider：Open-Meteo
-- POI Provider：Overpass / OpenStreetMap
+- POI Provider：Amap Web Service / Overpass / OpenStreetMap
 - Routing Provider：OSRM
-- Geocoding Provider：Nominatim
+- Geocoding Provider：Amap Web Service / Nominatim
 - Navigation Provider：高德跳转链接生成
 - AI Provider：OpenAI 兼容接口
 

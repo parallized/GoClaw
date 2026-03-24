@@ -169,6 +169,18 @@ describe("OpenAiCompatibleProvider", () => {
     }
   });
 
+  it("maps certificate verification failures to a user-friendly 503 error", async () => {
+    const certError = new Error("unknown certificate verification error") as Error & { code?: string };
+    certError.code = "UNABLE_TO_VERIFY_LEAF_SIGNATURE";
+    spyOn(globalThis, "fetch").mockRejectedValue(certError);
+    const provider = new OpenAiCompatibleProvider();
+
+    await expect(provider.generateText({ system: "s", user: "u" })).rejects.toMatchObject({
+      status: 503,
+      message: "AI 服务证书校验失败，请稍后重试。"
+    });
+  });
+
   it("throws AppError with 502 when stream returns no content", async () => {
     // SSE stream with only [DONE] and no content
     const encoder = new TextEncoder();

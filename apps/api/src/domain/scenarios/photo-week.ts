@@ -3,6 +3,7 @@ import {
   photoWeekRequestSchema,
   scenarioCatalog,
   type CameraSkill,
+  type PlanProcessStep,
   type PhotoTheme,
   type PhotoWeekPlan
 } from "@goplan/contracts";
@@ -124,6 +125,43 @@ async function loadPhotoPois(context: ScenarioPlannerContext, location: { latitu
   } catch {
     return primary;
   }
+}
+
+function buildPhotoProcessSteps(context: ScenarioPlannerContext, dayCount: number): PlanProcessStep[] {
+  return [
+    {
+      title: "天气评估",
+      detail: `拉取未来 ${dayCount} 天天气，按光线、云量与降水安排每日更合适的拍摄窗口。`,
+      provider: context.weatherProvider.name,
+      outcome: "success"
+    },
+    {
+      title: "位置识别",
+      detail: "根据当前坐标解析城市与区域，用于生成本周计划和地点说明。",
+      provider: context.geocodingProvider.name,
+      outcome: "success"
+    },
+    {
+      title: "拍摄地点筛选",
+      detail: "从真实 POI 中筛选景观点、公园、水边与人文点位，并按题材匹配度分配到每天。",
+      provider: context.poiProvider.name,
+      outcome: "success"
+    },
+    {
+      title: "导航生成",
+      detail: "为每个推荐点生成可直接跳转的导航链接，便于按天出发。",
+      provider: context.navigationProvider.name,
+      outcome: "success"
+    },
+    {
+      title: "文案润色",
+      detail: context.aiProvider
+        ? "在不新增虚构地点、天气或参数的前提下，轻量润色拍摄理由和提示。"
+        : "当前未启用 AI 润色，直接返回基于真实数据生成的确定性结果。",
+      provider: context.aiProvider?.name,
+      outcome: context.aiProvider ? "success" : "skipped"
+    }
+  ];
 }
 
 function scorePoi(day: DailyWeatherPoint, poi: PointOfInterest, preferredThemes: Set<PhotoTheme>, usedTimes: number): number {
@@ -275,7 +313,8 @@ export const photoWeekScenario: ScenarioDefinition<typeof photoWeekRequestSchema
         weatherProvider: context.weatherProvider.name,
         poiProvider: context.poiProvider.name,
         routingProvider: context.routingProvider.name,
-        aiEnhanced: false
+        aiEnhanced: false,
+        process: buildPhotoProcessSteps(context, days.length)
       }
     };
 

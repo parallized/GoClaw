@@ -1,4 +1,4 @@
-import { AppError } from "./errors";
+import { AppError, normalizeUpstreamServiceError } from "./errors";
 
 const USER_AGENT = "GoPlan/0.1 (+https://local.dev)";
 
@@ -62,10 +62,11 @@ async function fetchWithTimeout(
 
     return response;
   } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw new AppError("请求外部服务超时", 504);
+    const normalized = normalizeUpstreamServiceError(error);
+    if (normalized instanceof AppError) {
+      throw normalized;
     }
-    throw error;
+    throw normalized;
   } finally {
     clearTimeout(timeout);
   }
@@ -103,4 +104,3 @@ export async function fetchText(url: string, options: FetchJsonOptions = {}): Pr
     return await response.text();
   }, retries);
 }
-

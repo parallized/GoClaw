@@ -1,6 +1,6 @@
 import type { AiProvider } from "../../domain/service-types";
 import { env } from "../../config/env";
-import { AppError } from "../../lib/errors";
+import { AppError, normalizeUpstreamServiceError } from "../../lib/errors";
 import { buildAiApiUrl } from "./api-url";
 
 const USER_AGENT = "GoPlan/0.1 (+https://local.dev)";
@@ -70,14 +70,19 @@ export class OpenAiCompatibleProvider implements AiProvider {
         return content;
       } catch (error) {
         lastError = error;
-        if (error instanceof DOMException && error.name === "AbortError") {
+        const normalized = normalizeUpstreamServiceError(error, {
+          certificateMessage: "AI 服务证书校验失败，请稍后重试。",
+          networkMessage: "AI 服务网络连接失败，请稍后重试。"
+        });
+
+        if (normalized instanceof AppError && normalized.status === 504) {
           if (attempt < MAX_RETRIES) {
             await new Promise(r => setTimeout(r, BASE_DELAY_MS * 2 ** attempt));
             continue;
           }
-          throw new AppError("请求外部服务超时", 504);
         }
-        throw error;
+
+        throw normalized;
       } finally {
         clearTimeout(timeout);
       }

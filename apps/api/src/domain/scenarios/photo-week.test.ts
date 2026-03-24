@@ -108,6 +108,8 @@ describe("photoWeekScenario - AI enhancement", () => {
     expect(result.city).toBe("上海");
     expect(result.days.length).toBe(7);
     expect(result.meta.aiEnhanced).toBe(false);
+    expect(result.meta.process.length).toBeGreaterThanOrEqual(1);
+    expect(result.meta.process[0]?.title).toBeTruthy();
     expect(result.tips.length).toBeGreaterThanOrEqual(1);
   });
 

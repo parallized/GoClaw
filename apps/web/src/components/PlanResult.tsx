@@ -1,4 +1,48 @@
-import type { PhotoWeekPlan, PlanResult, RunPlan } from "@goplan/contracts";
+import type { PhotoWeekPlan, PlanMeta, PlanResult, RunPlan } from "@goplan/contracts";
+
+function formatOutcomeLabel(outcome: PlanMeta["process"][number]["outcome"]): string {
+  switch (outcome) {
+    case "fallback":
+      return "已回退";
+    case "skipped":
+      return "已跳过";
+    default:
+      return "已完成";
+  }
+}
+
+function ProcessView({ meta }: { meta: PlanMeta }) {
+  return (
+    <section className="border border-solid border-edge rounded-2 p-4 bg-surface">
+      <div className="flex flex-wrap items-center gap-2 justify-between">
+        <h3 className="text-sm font-semibold m-0">规划过程</h3>
+        <div className="text-tertiary text-xs flex flex-wrap gap-2">
+          <span>天气：{meta.weatherProvider}</span>
+          <span>地点：{meta.poiProvider}</span>
+          <span>路线：{meta.routingProvider}</span>
+          <span>AI：{meta.aiEnhanced ? "已启用" : "未启用"}</span>
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        {meta.process.map((step, idx) => (
+          <article key={`${step.title}-${idx}`} className="border border-solid border-edge rounded-2 p-4 bg-surface-hover">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="font-medium">{idx + 1}. {step.title}</div>
+                <p className="text-secondary mt-1.5 text-sm leading-relaxed mb-0">{step.detail}</p>
+              </div>
+              <div className="text-right shrink-0">
+                <div className="text-xs text-primary">{formatOutcomeLabel(step.outcome)}</div>
+                {step.provider && <div className="text-xs text-tertiary mt-1">{step.provider}</div>}
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 function RunPlanView({ plan }: { plan: RunPlan }) {
   return (
@@ -54,6 +98,8 @@ function RunPlanView({ plan }: { plan: RunPlan }) {
           ))}
         </ul>
       </div>
+
+      <ProcessView meta={plan.meta} />
     </div>
   );
 }
@@ -114,6 +160,8 @@ function PhotoWeekView({ plan }: { plan: PhotoWeekPlan }) {
           ))}
         </ul>
       </div>
+
+      <ProcessView meta={plan.meta} />
     </div>
   );
 }

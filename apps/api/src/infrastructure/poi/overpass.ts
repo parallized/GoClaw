@@ -20,6 +20,7 @@ interface OverpassResponse {
 const CACHE_TTL_MS = 20 * 60_000;
 const cache = new Map<string, { expiresAt: number; value: PointOfInterest[] }>();
 const pending = new Map<string, Promise<PointOfInterest[]>>();
+const DEFAULT_ENDPOINTS = ["https://overpass-api.de/api/interpreter"];
 
 function cacheKey(kind: "run" | "photo", location: Coordinates, radiusMeters: number): string {
   return `${kind}:${location.latitude.toFixed(3)}:${location.longitude.toFixed(3)}:${radiusMeters}`;
@@ -115,19 +116,46 @@ function normalize(origin: Coordinates, category: "run" | "photo", element: Over
   };
 }
 
-async function query(query: string): Promise<OverpassElement[]> {
-  const response = await fetchJson<OverpassResponse>("https://overpass-api.de/api/interpreter", {
-    method: "POST",
-    headers: { "content-type": "text/plain;charset=UTF-8" },
-    body: query,
-    timeoutMs: 25_000,
-    retries: 1
-  });
-  return response.elements;
+function canFallbackToNextEndpoint(error: unknown): boolean {
+  if (error instanceof AppError) {
+    return error.status === 429 || error.status >= 500;
+  }
+
+  return error instanceof Error;
+}
+
+async function queryOverpass(queryText: string, endpoints: readonly string[]): Promise<OverpassElement[]> {
+  let lastError: unknown;
+
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetchJson<OverpassResponse>(endpoint, {
+        method: "POST",
+        headers: { "content-type": "text/plain;charset=UTF-8" },
+        body: queryText,
+        timeoutMs: 25_000,
+        retries: 0
+      });
+      return response.elements;
+    } catch (error) {
+      lastError = error;
+      if (!canFallbackToNextEndpoint(error)) {
+        throw error;
+      }
+    }
+  }
+
+  if (lastError instanceof AppError) {
+    throw lastError;
+  }
+
+  throw new AppError("请求外部服务失败：Overpass 服务不可用", 503);
 }
 
 export class OverpassPoiProvider implements PoiProvider {
   readonly name = "overpass";
+
+  constructor(private readonly endpoints: readonly string[] = DEFAULT_ENDPOINTS) {}
 
   async searchRunPois(location: Coordinates, radiusMeters: number): Promise<PointOfInterest[]> {
     const key = cacheKey("run", location, radiusMeters);
@@ -157,7 +185,7 @@ out center tags 80;
     const request = (async () => {
       try {
         return writeCache(key, uniqueByName(
-          (await query(queryText))
+          (await queryOverpass(queryText, this.endpoints))
             .map((element) => normalize(location, "run", element))
             .filter((item): item is PointOfInterest => item !== null)
             .sort((left, right) => left.distanceMeters - right.distanceMeters)
@@ -170,6 +198,10 @@ out center tags 80;
 
         if (error instanceof AppError && error.status === 429) {
           throw new AppError("地点服务当前较繁忙，请稍后重试。", 503);
+        }
+
+        if (error instanceof AppError && error.status >= 500) {
+          throw new AppError("地点服务暂时不可用，请稍后重试。", 503);
         }
 
         throw error;
@@ -215,7 +247,7 @@ out center tags 120;
     const request = (async () => {
       try {
         return writeCache(key, uniqueByName(
-          (await query(queryText))
+          (await queryOverpass(queryText, this.endpoints))
             .map((element) => normalize(location, "photo", element))
             .filter((item): item is PointOfInterest => item !== null)
             .sort((left, right) => left.distanceMeters - right.distanceMeters)
@@ -228,6 +260,10 @@ out center tags 120;
 
         if (error instanceof AppError && error.status === 429) {
           throw new AppError("地点服务当前较繁忙，请稍后重试。", 503);
+        }
+
+        if (error instanceof AppError && error.status >= 500) {
+          throw new AppError("地点服务暂时不可用，请稍后重试。", 503);
         }
 
         throw error;
