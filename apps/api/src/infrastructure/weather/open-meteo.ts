@@ -35,6 +35,20 @@ function cacheKey(location: Coordinates, timezone: string, days: number): string
   return `${location.latitude.toFixed(3)}:${location.longitude.toFixed(3)}:${timezone}:${days}`;
 }
 
+function formatLocationContext(location: Coordinates, timezone: string, days: number): string {
+  const parts = [
+    `坐标 ${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`,
+    `时区 ${timezone}`,
+    `${days} 天`
+  ];
+
+  if (location.label?.trim()) {
+    parts.unshift(`位置 ${location.label.trim()}`);
+  }
+
+  return parts.join(" · ");
+}
+
 function readCache(key: string, allowStale = false): WeatherForecast | null {
   const item = cache.get(key);
   if (!item) {
@@ -62,15 +76,16 @@ export class OpenMeteoWeatherProvider implements WeatherProvider {
 
   async getForecast(location: Coordinates, timezone: string, days: number): Promise<WeatherForecast> {
     const key = cacheKey(location, timezone, days);
+    const contextDetail = formatLocationContext(location, timezone, days);
     const cached = readCache(key);
     if (cached) {
-      logPlanExecution("info", `天气命中缓存：${timezone}，${days} 天`);
+      logPlanExecution("info", "天气命中缓存", contextDetail);
       return cached;
     }
 
     const inflight = pending.get(key);
     if (inflight) {
-      logPlanExecution("info", "天气请求复用进行中的 Promise");
+      logPlanExecution("info", "天气请求复用进行中的 Promise", contextDetail);
       return inflight;
     }
 
@@ -85,7 +100,7 @@ export class OpenMeteoWeatherProvider implements WeatherProvider {
 
     const request = (async () => {
       try {
-        logPlanExecution("info", `开始请求 Open-Meteo 天气服务，天数 ${days}`);
+        logPlanExecution("info", "开始请求 Open-Meteo 天气服务", contextDetail);
         const response = await fetchJson<OpenMeteoResponse>(`https://api.open-meteo.com/v1/forecast?${params.toString()}`, {
           retries: 1
         });

@@ -133,6 +133,7 @@ function ExecutionPanel({
                       <span>{new Date(entry.timestamp).toLocaleTimeString("zh-CN", { hour12: false })}</span>
                     </div>
                     <div className="mt-1 text-secondary leading-relaxed">{entry.message}</div>
+                    {entry.detail && <div className="text-secondary leading-relaxed">{entry.detail}</div>}
                   </div>
                 ))}
               </div>

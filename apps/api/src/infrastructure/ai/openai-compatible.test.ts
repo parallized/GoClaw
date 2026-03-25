@@ -1,7 +1,9 @@
+import type { PlanExecutionStreamEvent } from "@goclaw/contracts";
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { OpenAiCompatibleProvider } from "./openai-compatible";
 import { env } from "../../config/env";
 import { AppError } from "../../lib/errors";
+import { runWithPlanExecution, withExecutionStage } from "../../lib/plan-execution";
 
 /** Build a SSE stream body from an array of content strings. */
 function buildSSEStream(chunks: string[]): ReadableStream<Uint8Array> {
@@ -25,6 +27,27 @@ function mockFetchOk(chunks: string[]) {
   return spyOn(globalThis, "fetch").mockResolvedValue(
     new Response(buildSSEStream(chunks), { status: 200 })
   );
+}
+
+async function captureExecutionLogs(task: () => Promise<unknown>) {
+  const events: PlanExecutionStreamEvent[] = [];
+
+  await runWithPlanExecution(
+    "run_tomorrow",
+    [{ id: "ai", title: "AI", order: 0, detail: "AI stage" }],
+    (event) => {
+      events.push(event);
+    },
+    async () => {
+      await withExecutionStage("ai", async () => {
+        await task();
+      });
+    }
+  );
+
+  return events
+    .filter((event): event is Extract<PlanExecutionStreamEvent, { type: "log" }> => event.type === "log")
+    .map((event) => event.entry);
 }
 
 describe("OpenAiCompatibleProvider", () => {
@@ -105,6 +128,47 @@ describe("OpenAiCompatibleProvider", () => {
 
     const body = JSON.parse((fetchSpy.mock.calls[0] as [string, RequestInit])[1].body as string);
     expect(body.temperature).toBe(0.7);
+  });
+
+  it("logs redacted request preview inside plan execution", async () => {
+    mockFetchOk(["ok"]);
+    const provider = new OpenAiCompatibleProvider();
+
+    const logs = await captureExecutionLogs(async () => {
+      await provider.generateText({
+        system: "Authorization Bearer abcdefghijklmnopqrstuvwxyz",
+        user: "联系 13800138000 或 foo@example.com，token sk-secret-1234567890"
+      });
+    });
+
+    const previewLog = logs.find((entry) => entry.message === "AI 请求载荷（已脱敏）");
+    expect(previewLog).toBeDefined();
+    expect(previewLog?.detail).toContain("Bearer ***");
+    expect(previewLog?.detail).toContain("[phone]");
+    expect(previewLog?.detail).toContain("[email]");
+    expect(previewLog?.detail).toContain("sk-***");
+  });
+
+  it("logs streaming progress inside plan execution", async () => {
+    mockFetchOk(["Hello", " World"]);
+    const provider = new OpenAiCompatibleProvider();
+
+    const logs = await captureExecutionLogs(async () => {
+      await provider.generateText({ system: "sys", user: "usr" });
+    });
+
+    const progressLog = logs.find((entry) => entry.message === "AI 流式输出接收中");
+    const finalLog = logs.find((entry) => entry.message === "AI 流式响应结束");
+    expect(progressLog).toBeDefined();
+    expect(finalLog).toBeDefined();
+
+    const progressDetail = JSON.parse(progressLog?.detail ?? "{}") as Record<string, unknown>;
+    const finalDetail = JSON.parse(finalLog?.detail ?? "{}") as Record<string, unknown>;
+    expect(progressDetail.phase).toBe("partial");
+    expect(Number(progressDetail.visibleChars)).toBeGreaterThan(0);
+    expect(Number(progressDetail.estimatedCompletionTokens)).toBeGreaterThan(0);
+    expect(finalDetail.phase).toBe("final");
+    expect(Number(finalDetail.visibleChars)).toBe(11);
   });
 
   it("filters out <think> blocks from reasoning models", async () => {
