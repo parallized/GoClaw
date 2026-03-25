@@ -1,4 +1,4 @@
-import type { Coordinates, PhotoTheme, RunTerrain } from "@goplan/contracts";
+import type { Coordinates, PhotoTheme, RunTerrain } from "@goclaw/contracts";
 import type { PoiProvider, PointOfInterest } from "../../domain/service-types";
 import { haversineDistanceMeters, uniqueByName } from "../../lib/geo";
 import { AppError } from "../../lib/errors";

@@ -5,7 +5,7 @@ import {
   type PlanProcessStep,
   type RunPlan,
   type RunPlanRequest
-} from "@goplan/contracts";
+} from "@goclaw/contracts";
 import type { PointOfInterest } from "../service-types";
 import type { ScenarioDefinition, ScenarioPlannerContext } from "../scenario-definition";
 import { extractJsonBlock, safeJsonParse } from "../../lib/json-parser";

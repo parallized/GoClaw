@@ -1,4 +1,4 @@
-import type { Coordinates } from "@goplan/contracts";
+import type { Coordinates } from "@goclaw/contracts";
 import type { WeatherForecast, WeatherProvider } from "../../domain/service-types";
 import { AppError } from "../../lib/errors";
 import { fetchJson } from "../../lib/http";

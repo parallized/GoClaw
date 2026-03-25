@@ -1,4 +1,4 @@
-import type { Coordinates, PhotoTheme, RunTerrain } from "@goplan/contracts";
+import type { Coordinates, PhotoTheme, RunTerrain } from "@goclaw/contracts";
 
 export type WeatherCode = number;
 

@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import type { PlanProcessStep, ScenarioId, ScenarioManifest } from "@goplan/contracts";
+import type { PlanProcessStep, ScenarioId, ScenarioManifest } from "@goclaw/contracts";
 import type {
   AiProvider,
   GeocodingProvider,

@@ -6,7 +6,7 @@ import type {
   PlanExecutionStreamEvent,
   PlanProcessStep,
   ScenarioId
-} from "@goplan/contracts";
+} from "@goclaw/contracts";
 import { toErrorMessage } from "./errors";
 
 interface PlanExecutionState {

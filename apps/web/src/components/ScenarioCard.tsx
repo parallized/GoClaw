@@ -1,4 +1,4 @@
-import type { ScenarioId, ScenarioManifest } from "@goplan/contracts";
+import type { ScenarioId, ScenarioManifest } from "@goclaw/contracts";
 
 interface ScenarioCardProps {
   scenario: ScenarioManifest;

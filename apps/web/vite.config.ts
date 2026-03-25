@@ -14,7 +14,7 @@ export default defineConfig(({ mode }) => {
     envDir,
     resolve: {
       alias: {
-        "@goplan/contracts": fileURLToPath(new URL("../../packages/contracts/src/index.ts", import.meta.url))
+        "@goclaw/contracts": fileURLToPath(new URL("../../packages/contracts/src/index.ts", import.meta.url))
       }
     },
     server: {

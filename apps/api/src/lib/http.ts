@@ -1,7 +1,7 @@
 import { AppError, normalizeUpstreamServiceError } from "./errors";
 import { logPlanExecution } from "./plan-execution";
 
-const USER_AGENT = "GoPlan/0.1 (+https://local.dev)";
+const USER_AGENT = "GoClaw/0.1 (+https://local.dev)";
 
 const RETRYABLE_STATUS = new Set([429, 502, 503, 504]);
 const MAX_RETRIES = 3;

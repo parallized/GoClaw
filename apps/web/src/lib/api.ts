@@ -5,7 +5,7 @@ import {
   type PlanResult,
   type ScenarioId,
   type ScenarioManifest
-} from "@goplan/contracts";
+} from "@goclaw/contracts";
 
 interface ApiErrorShape {
   ok: false;

@@ -1,4 +1,4 @@
-import type { Coordinates, PhotoWeekRequest, RunPlanRequest, ScenarioId } from "@goplan/contracts";
+import type { Coordinates, PhotoWeekRequest, RunPlanRequest, ScenarioId } from "@goclaw/contracts";
 
 export const defaultLocation: Coordinates = {
   latitude: 39.9042,

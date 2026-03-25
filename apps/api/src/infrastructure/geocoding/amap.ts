@@ -1,4 +1,4 @@
-import type { Coordinates } from "@goplan/contracts";
+import type { Coordinates } from "@goclaw/contracts";
 import type { GeocodingProvider, PlaceSummary } from "../../domain/service-types";
 import { normalizeAmapError, requestAmapJson, type AmapWebServiceConfig } from "../amap/web-service";
 

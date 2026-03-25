@@ -17,7 +17,7 @@
         "packages/contracts/node_modules/zod",
         "node_modules/.bun/zod@3.25.76/node_modules/zod"
       ],
-      "@goplan/contracts": [
+      "@goclaw/contracts": [
         "packages/contracts/src/index.ts"
       ]
     }

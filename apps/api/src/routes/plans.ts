@@ -1,4 +1,4 @@
-import { coordinatesSchema, type PlanExecutionStreamEvent, type ScenarioId, scenarioCatalog } from "@goplan/contracts";
+import { coordinatesSchema, type PlanExecutionStreamEvent, type ScenarioId, scenarioCatalog } from "@goclaw/contracts";
 import { Elysia } from "elysia";
 import type { ScenarioPlannerContext } from "../domain/scenario-definition";
 import { scenarioMap } from "../domain/scenarios";
@@ -43,7 +43,7 @@ function handleRouteError(error: unknown, set: { status?: number | string }) {
 
 export function createPlanRoutes(context: ScenarioPlannerContext) {
   return new Elysia({ prefix: "/api" })
-    .get("/health", () => ({ ok: true, service: "goplan-api" }))
+    .get("/health", () => ({ ok: true, service: "goclaw-api" }))
     .get("/scenarios", () => ({ ok: true, data: scenarioCatalog }))
     .get("/location-label", async ({ query, set }) => {
       try {

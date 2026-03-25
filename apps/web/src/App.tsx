@@ -8,7 +8,7 @@ import type {
   RunPlanRequest,
   ScenarioId,
   ScenarioManifest
-} from "@goplan/contracts";
+} from "@goclaw/contracts";
 import { PlanResultView } from "./components/PlanResult";
 import { FormSection } from "./components/FormSection";
 import { ScenarioCard } from "./components/ScenarioCard";
@@ -146,7 +146,7 @@ export function App() {
               智能活动规划
             </div>
             <h1 className="text-5xl sm:text-6xl font-bold leading-tight tracking-tight text-primary mb-6">
-              GoPlan
+              GoClaw
             </h1>
             <p className="text-secondary text-lg sm:text-xl leading-relaxed max-w-xl">
               基于真实天气、地点与路线数据，为你的跑步和摄影做出优雅的规划。

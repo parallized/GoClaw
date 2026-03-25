@@ -1,4 +1,4 @@
-import type { Coordinates } from "@goplan/contracts";
+import type { Coordinates } from "@goclaw/contracts";
 import { fetchLocationLabel } from "./api";
 
 export interface GeoResult {

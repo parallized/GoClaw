@@ -1,4 +1,4 @@
-import type { Coordinates } from "@goplan/contracts";
+import type { Coordinates } from "@goclaw/contracts";
 import type { RoutePlan, RoutingProvider } from "../../domain/service-types";
 import { AppError } from "../../lib/errors";
 import { fetchJson } from "../../lib/http";

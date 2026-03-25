@@ -1,4 +1,4 @@
-import type { Coordinates } from "@goplan/contracts";
+import type { Coordinates } from "@goclaw/contracts";
 
 const EARTH_RADIUS_METERS = 6_371_000;
 

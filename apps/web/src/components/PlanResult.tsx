@@ -6,7 +6,7 @@ import type {
   PlanMeta,
   PlanResult,
   RunPlan
-} from "@goplan/contracts";
+} from "@goclaw/contracts";
 
 function formatOutcomeLabel(outcome: PlanMeta["process"][number]["outcome"]): string {
   switch (outcome) {

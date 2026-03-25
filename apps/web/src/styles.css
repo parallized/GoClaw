@@ -161,7 +161,7 @@ select {
 
 .n-input:focus {
   border-color: var(--color-accent-blue);
-  background: #ffffff;
+  background: var(--color-base-bg);
 }
 
 .n-toggle {

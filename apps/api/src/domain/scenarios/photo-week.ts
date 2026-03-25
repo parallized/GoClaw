@@ -6,7 +6,7 @@ import {
   type PlanProcessStep,
   type PhotoTheme,
   type PhotoWeekPlan
-} from "@goplan/contracts";
+} from "@goclaw/contracts";
 import type { DailyWeatherPoint, PointOfInterest } from "../service-types";
 import type { ScenarioDefinition, ScenarioPlannerContext } from "../scenario-definition";
 import { extractJsonBlock, safeJsonParse } from "../../lib/json-parser";

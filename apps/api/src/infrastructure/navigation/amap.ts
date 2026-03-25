@@ -1,4 +1,4 @@
-import type { Coordinates } from "@goplan/contracts";
+import type { Coordinates } from "@goclaw/contracts";
 import type { NavigationProvider } from "../../domain/service-types";
 
 export class AmapNavigationProvider implements NavigationProvider {
@@ -6,6 +6,6 @@ export class AmapNavigationProvider implements NavigationProvider {
 
   buildNavigationUrl(destination: Coordinates, label: string): string {
     const name = encodeURIComponent(label);
-    return `https://uri.amap.com/navigation?to=${destination.longitude},${destination.latitude},${name}&mode=walk&src=goplan&coordinate=gaode&callnative=0`;
+    return `https://uri.amap.com/navigation?to=${destination.longitude},${destination.latitude},${name}&mode=walk&src=goclaw&coordinate=gaode&callnative=0`;
   }
 }

@@ -1,4 +1,4 @@
-import type { Coordinates } from "@goplan/contracts";
+import type { Coordinates } from "@goclaw/contracts";
 import type { GeocodingProvider, PlaceSummary } from "../../domain/service-types";
 import { shouldFallbackFromPrimary } from "../amap/web-service";
 import { logPlanExecution } from "../../lib/plan-execution";

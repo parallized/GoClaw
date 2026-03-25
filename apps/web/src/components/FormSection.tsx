@@ -1,5 +1,5 @@
-import type { CameraSkill, PhotoTheme, RunTerrain, ScenarioId } from "@goplan/contracts";
-import type { PhotoWeekRequest, RunPlanRequest } from "@goplan/contracts";
+import type { CameraSkill, PhotoTheme, RunTerrain, ScenarioId } from "@goclaw/contracts";
+import type { PhotoWeekRequest, RunPlanRequest } from "@goclaw/contracts";
 
 interface FormSectionProps {
   scenarioId: ScenarioId;
@@ -73,7 +73,7 @@ function LocationDisplay({ label, latitude, longitude, geoStatus, onRelocate }: 
           </div>
           <button
             type="button"
-            className="shrink-0 rounded-lg bg-primary text-base-bg border-none py-2 px-3 sm:px-4 text-[10px] sm:text-xs font-bold cursor-pointer transition-transform hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 uppercase tracking-widest shadow-md"
+            className="shrink-0 rounded-lg bg-surface/40 border border-solid border-white/10 text-primary py-2 px-3 sm:px-4 text-[10px] sm:text-xs font-bold cursor-pointer transition-transform hover:scale-105 active:scale-95 hover:bg-surface/60 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 uppercase tracking-widest shadow-sm"
             onClick={onRelocate}
             disabled={geoStatus === "detecting"}
           >

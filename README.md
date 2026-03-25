@@ -1,6 +1,6 @@
-# GoPlan
+# GoClaw
 
-GoPlan 是一个基于 Bun Monorepo 的 AI 智能活动规划器 MVP，当前聚焦两个场景：
+GoClaw 是一个基于 Bun Monorepo 的 AI 智能活动规划器 MVP，当前聚焦两个场景：
 
 - 明天跑步路线规划
 - 最近一周拍照地点与拍摄建议规划
@@ -10,7 +10,7 @@ GoPlan 是一个基于 Bun Monorepo 的 AI 智能活动规划器 MVP，当前聚
 - Monorepo：Bun Workspaces
 - 前端：React + TypeScript + Vite + UnoCSS
 - 后端：Elysia + TypeScript
-- 共享契约：`@goplan/contracts`
+- 共享契约：`@goclaw/contracts`
 - 实时能力接入：Open-Meteo、Amap Web Service、Overpass、OSRM、Nominatim、OpenAI 兼容大模型接口
 
 ## 目录结构

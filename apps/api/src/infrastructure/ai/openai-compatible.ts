@@ -4,7 +4,7 @@ import { AppError, normalizeUpstreamServiceError } from "../../lib/errors";
 import { logPlanExecution } from "../../lib/plan-execution";
 import { buildAiApiUrl } from "./api-url";
 
-const USER_AGENT = "GoPlan/0.1 (+https://local.dev)";
+const USER_AGENT = "GoClaw/0.1 (+https://local.dev)";
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1_000;
 
