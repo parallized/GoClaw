@@ -1,6 +1,7 @@
 import type { Coordinates } from "@goplan/contracts";
 import type { GeocodingProvider, PlaceSummary } from "../../domain/service-types";
 import { fetchJson } from "../../lib/http";
+import { logPlanExecution } from "../../lib/plan-execution";
 
 interface NominatimResponse {
   display_name: string;
@@ -77,16 +78,19 @@ export class NominatimGeocodingProvider implements GeocodingProvider {
     const key = cacheKey(location);
     const cached = readCache(key);
     if (cached) {
+      logPlanExecution("info", "Nominatim 逆地理编码命中缓存");
       return cached;
     }
 
     const inflight = pending.get(key);
     if (inflight) {
+      logPlanExecution("info", "Nominatim 逆地理编码复用进行中的请求");
       return inflight;
     }
 
     const request = (async () => {
       try {
+        logPlanExecution("info", "开始请求 Nominatim 逆地理编码");
         const params = new URLSearchParams({
           format: "jsonv2",
           lat: String(location.latitude),
@@ -98,9 +102,18 @@ export class NominatimGeocodingProvider implements GeocodingProvider {
         const response = await fetchJson<NominatimResponse>(`https://nominatim.openstreetmap.org/reverse?${params.toString()}`, {
           retries: 0
         });
-        return writeCache(key, toPlaceSummary(response));
-      } catch {
-        return readCache(key, true) ?? formatFallbackPlace(location);
+        const place = writeCache(key, toPlaceSummary(response));
+        logPlanExecution("info", `Nominatim 逆地理编码成功：${place.displayName}`);
+        return place;
+      } catch (error) {
+        const stale = readCache(key, true);
+        if (stale) {
+          logPlanExecution("warn", "Nominatim 失败，回退到过期缓存位置结果");
+          return stale;
+        }
+
+        logPlanExecution("warn", "Nominatim 失败，回退到输入位置标签", error instanceof Error ? error.message : String(error));
+        return formatFallbackPlace(location);
       } finally {
         pending.delete(key);
       }

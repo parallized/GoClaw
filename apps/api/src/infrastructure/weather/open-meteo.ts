@@ -2,6 +2,7 @@ import type { Coordinates } from "@goplan/contracts";
 import type { WeatherForecast, WeatherProvider } from "../../domain/service-types";
 import { AppError } from "../../lib/errors";
 import { fetchJson } from "../../lib/http";
+import { logPlanExecution } from "../../lib/plan-execution";
 
 interface OpenMeteoResponse {
   timezone: string;
@@ -63,11 +64,13 @@ export class OpenMeteoWeatherProvider implements WeatherProvider {
     const key = cacheKey(location, timezone, days);
     const cached = readCache(key);
     if (cached) {
+      logPlanExecution("info", `天气命中缓存：${timezone}，${days} 天`);
       return cached;
     }
 
     const inflight = pending.get(key);
     if (inflight) {
+      logPlanExecution("info", "天气请求复用进行中的 Promise");
       return inflight;
     }
 
@@ -82,11 +85,12 @@ export class OpenMeteoWeatherProvider implements WeatherProvider {
 
     const request = (async () => {
       try {
+        logPlanExecution("info", `开始请求 Open-Meteo 天气服务，天数 ${days}`);
         const response = await fetchJson<OpenMeteoResponse>(`https://api.open-meteo.com/v1/forecast?${params.toString()}`, {
           retries: 1
         });
 
-        return writeCache(key, {
+        const forecast = writeCache(key, {
           timezone: response.timezone,
           hourly: response.hourly.time.map((time, index) => ({
             time,
@@ -108,9 +112,12 @@ export class OpenMeteoWeatherProvider implements WeatherProvider {
             sunset: response.daily.sunset[index] ?? `${date}T18:00`
           }))
         });
+        logPlanExecution("info", `天气服务返回成功：${forecast.daily.length} 天、${forecast.hourly.length} 条小时数据`);
+        return forecast;
       } catch (error) {
         const stale = readCache(key, true);
         if (stale) {
+          logPlanExecution("warn", "天气服务失败，回退到过期缓存数据");
           return stale;
         }
 

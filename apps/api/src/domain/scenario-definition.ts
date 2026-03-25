@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import type { ScenarioId, ScenarioManifest } from "@goplan/contracts";
+import type { PlanProcessStep, ScenarioId, ScenarioManifest } from "@goplan/contracts";
 import type {
   AiProvider,
   GeocodingProvider,
@@ -23,6 +23,6 @@ export interface ScenarioDefinition<TInputSchema extends z.ZodTypeAny, TOutputSc
   manifest: ScenarioManifest;
   inputSchema: TInputSchema;
   outputSchema: TOutputSchema;
+  getExecutionStages?(context: ScenarioPlannerContext): PlanProcessStep[];
   plan(context: ScenarioPlannerContext, input: z.infer<TInputSchema>): Promise<z.infer<TOutputSchema>>;
 }
-

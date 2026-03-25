@@ -72,12 +72,59 @@ export const runRouteSchema = z.object({
 export type RunRoute = z.infer<typeof runRouteSchema>;
 
 export const planProcessStepSchema = z.object({
+  id: z.string(),
   title: z.string(),
   detail: z.string(),
   provider: z.string().optional(),
   outcome: z.enum(["success", "fallback", "skipped"])
 });
 export type PlanProcessStep = z.infer<typeof planProcessStepSchema>;
+
+export const planExecutionStageStatusSchema = z.enum(["pending", "running", "completed", "failed", "skipped"]);
+export type PlanExecutionStageStatus = z.infer<typeof planExecutionStageStatusSchema>;
+
+export const planExecutionStageSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  order: z.number().int().nonnegative(),
+  provider: z.string().optional(),
+  detail: z.string().optional()
+});
+export type PlanExecutionStage = z.infer<typeof planExecutionStageSchema>;
+
+export const planExecutionLogLevelSchema = z.enum(["info", "warn", "error"]);
+export type PlanExecutionLogLevel = z.infer<typeof planExecutionLogLevelSchema>;
+
+export const planExecutionLogEntrySchema = z.object({
+  stageId: z.string(),
+  level: planExecutionLogLevelSchema,
+  message: z.string(),
+  detail: z.string().optional(),
+  timestamp: z.string()
+});
+export type PlanExecutionLogEntry = z.infer<typeof planExecutionLogEntrySchema>;
+
+export const planExecutionStartEventSchema = z.object({
+  type: z.literal("start"),
+  scenarioId: scenarioIdSchema,
+  stages: z.array(planExecutionStageSchema),
+  timestamp: z.string()
+});
+
+export const planExecutionStageEventSchema = z.object({
+  type: z.literal("stage"),
+  stage: planExecutionStageSchema,
+  status: planExecutionStageStatusSchema,
+  timestamp: z.string()
+});
+
+export const planExecutionLogEventSchema = z.object({
+  type: z.literal("log"),
+  entry: planExecutionLogEntrySchema
+});
+
+// Moved down to fix circular dependency with planResultSchema
+
 
 export const planMetaSchema = z.object({
   weatherProvider: z.string(),
@@ -143,6 +190,28 @@ export const planResultSchema = z.discriminatedUnion("type", [
   photoWeekPlanSchema
 ]);
 export type PlanResult = z.infer<typeof planResultSchema>;
+
+export const planExecutionResultEventSchema = z.object({
+  type: z.literal("result"),
+  data: planResultSchema,
+  timestamp: z.string()
+});
+
+export const planExecutionErrorEventSchema = z.object({
+  type: z.literal("error"),
+  message: z.string(),
+  issues: z.unknown().optional(),
+  timestamp: z.string()
+});
+
+export const planExecutionStreamEventSchema = z.discriminatedUnion("type", [
+  planExecutionStartEventSchema,
+  planExecutionStageEventSchema,
+  planExecutionLogEventSchema,
+  planExecutionResultEventSchema,
+  planExecutionErrorEventSchema
+]);
+export type PlanExecutionStreamEvent = z.infer<typeof planExecutionStreamEventSchema>;
 
 export const apiSuccessSchema = <T extends z.ZodTypeAny>(schema: T) => z.object({
   ok: z.literal(true),

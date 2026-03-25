@@ -9,8 +9,17 @@ import {
 import type { PointOfInterest } from "../service-types";
 import type { ScenarioDefinition, ScenarioPlannerContext } from "../scenario-definition";
 import { extractJsonBlock, safeJsonParse } from "../../lib/json-parser";
-import { AppError } from "../../lib/errors";
+import { AppError, toErrorMessage } from "../../lib/errors";
+import { logPlanExecution, markExecutionStage, withExecutionStage } from "../../lib/plan-execution";
 import { scoreRunHour, summarizeDailyWeather } from "../../lib/weather";
+
+const RUN_STAGE_IDS = {
+  weather: "run.weather",
+  geocoding: "run.geocoding",
+  poi: "run.poi",
+  routing: "run.routing",
+  ai: "run.ai"
+} as const;
 
 function manifest() {
   const found = scenarioCatalog.find((item) => item.id === "run_tomorrow");
@@ -78,45 +87,59 @@ function buildTips(bestTime: string, temperatureMaxC: number, precipitationProba
 async function loadRunPois(context: ScenarioPlannerContext, input: RunPlanRequest): Promise<PointOfInterest[]> {
   const maxDistanceKm = input.preferences?.preferredDistanceKm?.max ?? 8;
   const primaryRadius = Math.min(9000, Math.max(2500, Math.round(maxDistanceKm * 750)));
+  logPlanExecution("info", `按 ${primaryRadius} 米半径搜索跑步地点候选`);
   const primary = await context.poiProvider.searchRunPois(input.location, primaryRadius);
   if (primary.length >= 3) {
+    logPlanExecution("info", `首轮搜索已获得 ${primary.length} 个候选地点`);
     return primary;
   }
 
   try {
-    return await context.poiProvider.searchRunPois(input.location, Math.min(primaryRadius + 4000, 15000));
-  } catch {
+    const expandedRadius = Math.min(primaryRadius + 4000, 15000);
+    logPlanExecution("warn", `首轮候选仅 ${primary.length} 个，扩展到 ${expandedRadius} 米继续搜索`);
+    const expanded = await context.poiProvider.searchRunPois(input.location, expandedRadius);
+    logPlanExecution("info", `扩圈搜索后共获得 ${expanded.length} 个候选地点`);
+    return expanded;
+  } catch (error) {
+    logPlanExecution("warn", "扩圈搜索失败，回退为首轮跑步地点结果", toErrorMessage(error));
     return primary;
   }
 }
 
-function buildRunProcessSteps(context: ScenarioPlannerContext, routeCount: number): PlanProcessStep[] {
+function buildRunProcessSteps(context: ScenarioPlannerContext, routeCount?: number): PlanProcessStep[] {
   return [
     {
+      id: RUN_STAGE_IDS.weather,
       title: "天气评估",
       detail: "拉取未来 7 天逐小时天气，筛选出明天最适合出发的时间窗口。",
       provider: context.weatherProvider.name,
       outcome: "success"
     },
     {
+      id: RUN_STAGE_IDS.geocoding,
       title: "位置识别",
       detail: "根据当前坐标解析城市与区域，用于结果命名和地点提示。",
       provider: context.geocodingProvider.name,
       outcome: "success"
     },
     {
+      id: RUN_STAGE_IDS.poi,
       title: "跑步地点筛选",
       detail: "基于真实 POI 搜索周边公园、绿道和跑道，并按距离与地形做候选排序。",
       provider: context.poiProvider.name,
       outcome: "success"
     },
     {
+      id: RUN_STAGE_IDS.routing,
       title: "路线测距",
-      detail: `为候选地点计算步行往返距离与预计用时，最终生成 ${routeCount} 条路线建议。`,
+      detail: routeCount === undefined
+        ? "为候选地点计算步行往返距离与预计用时，并生成路线建议。"
+        : `为候选地点计算步行往返距离与预计用时，最终生成 ${routeCount} 条路线建议。`,
       provider: context.routingProvider.name,
       outcome: "success"
     },
     {
+      id: RUN_STAGE_IDS.ai,
       title: "文案润色",
       detail: context.aiProvider
         ? "在不新增事实的前提下，对推荐理由和注意事项做轻量润色。"
@@ -145,6 +168,7 @@ async function enhancePlan(context: ScenarioPlannerContext, plan: RunPlan): Prom
 
     const parsed = safeJsonParse<{ reason?: string; routes?: Array<{ name: string; why?: string }>; tips?: string[] }>(extractJsonBlock(response));
     if (!parsed) {
+      logPlanExecution("warn", "AI 返回内容无法解析，保留原始跑步文案");
       return plan;
     }
 
@@ -161,7 +185,8 @@ async function enhancePlan(context: ScenarioPlannerContext, plan: RunPlan): Prom
         aiEnhanced: true
       }
     };
-  } catch {
+  } catch (error) {
+    logPlanExecution("warn", "AI 润色失败，保留原始跑步文案", toErrorMessage(error));
     return plan;
   }
 }
@@ -171,44 +196,76 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
   manifest: manifest(),
   inputSchema: runPlanRequestSchema,
   outputSchema: runPlanSchema,
+  getExecutionStages(context) {
+    return buildRunProcessSteps(context);
+  },
   async plan(context, input) {
-    const [forecast, place, pois] = await Promise.all([
-      context.weatherProvider.getForecast(input.location, input.timezone, 7),
-      context.geocodingProvider.reverseGeocode(input.location),
-      loadRunPois(context, input)
+    const [weatherData, place, pois] = await Promise.all([
+      withExecutionStage(RUN_STAGE_IDS.weather, async () => {
+        logPlanExecution("info", "开始拉取未来 7 天的逐小时天气数据");
+        const forecast = await context.weatherProvider.getForecast(input.location, input.timezone, 7);
+        logPlanExecution("info", `天气数据拉取完成：${forecast.daily.length} 天、${forecast.hourly.length} 条逐小时记录`);
+
+        const tomorrow = getTomorrowDate(input.timezone);
+        const targetDay = forecast.daily.find((item) => item.date === tomorrow) ?? forecast.daily[0];
+        if (!targetDay) {
+          logPlanExecution("error", "天气服务未返回可用于明天规划的数据");
+          throw new AppError("天气服务未返回明天的天气数据", 502);
+        }
+
+        const candidateHours = forecast.hourly
+          .filter((hour) => hour.time.startsWith(targetDay.date))
+          .filter((hour) => {
+            const time = hour.time.split("T")[1] ?? "00:00";
+            if (time < "05:00" || time > "21:00") {
+              return false;
+            }
+
+            const startWindow = input.preferences?.startWindow;
+            return startWindow ? time >= startWindow.from && time <= startWindow.to : true;
+          });
+
+        logPlanExecution("info", `天气评估阶段筛出 ${candidateHours.length} 个可跑步时间点`);
+
+        const bestHour = candidateHours
+          .map((hour) => ({
+            hour,
+            score: scoreRunHour(hour) - ((input.preferences?.avoidHighUv ?? true) ? hour.uvIndex * 4 : 0)
+          }))
+          .sort((left, right) => right.score - left.score)[0]?.hour;
+
+        if (!bestHour) {
+          logPlanExecution("error", "当前天气和偏好条件下未能推导出合适的跑步时间窗口");
+          throw new AppError("未能推导出适合跑步的时间窗口，请调整偏好后重试。", 400);
+        }
+
+        const weatherLabel = summarizeDailyWeather(targetDay);
+        logPlanExecution("info", `最佳时段评估完成：${bestHour.time.split("T")[1] ?? "07:00"}，天气 ${weatherLabel}`);
+
+        return {
+          forecast,
+          targetDay,
+          bestHour,
+          weatherLabel
+        };
+      }),
+      withExecutionStage(RUN_STAGE_IDS.geocoding, async () => {
+        logPlanExecution("info", "开始解析当前位置名称");
+        const resolvedPlace = await context.geocodingProvider.reverseGeocode(input.location);
+        logPlanExecution("info", `位置解析完成：${resolvedPlace.displayName}`);
+        return resolvedPlace;
+      }),
+      withExecutionStage(RUN_STAGE_IDS.poi, async () => {
+        logPlanExecution("info", "开始搜索周边真实跑步地点");
+        const resolvedPois = await loadRunPois(context, input);
+        logPlanExecution("info", `地点筛选完成：共获得 ${resolvedPois.length} 个候选 POI`);
+        return resolvedPois;
+      })
     ]);
 
     if (pois.length === 0) {
+      logPlanExecution("error", "附近未找到可用于跑步推荐的真实 POI", undefined, RUN_STAGE_IDS.poi);
       throw new AppError("当前位置附近暂未找到可用于跑步推荐的真实 POI，请尝试更换位置后重试。", 404);
-    }
-
-    const tomorrow = getTomorrowDate(input.timezone);
-    const targetDay = forecast.daily.find((item) => item.date === tomorrow) ?? forecast.daily[0];
-    if (!targetDay) {
-      throw new AppError("天气服务未返回明天的天气数据", 502);
-    }
-
-    const candidateHours = forecast.hourly
-      .filter((hour) => hour.time.startsWith(targetDay.date))
-      .filter((hour) => {
-        const time = hour.time.split("T")[1] ?? "00:00";
-        if (time < "05:00" || time > "21:00") {
-          return false;
-        }
-
-        const startWindow = input.preferences?.startWindow;
-        return startWindow ? time >= startWindow.from && time <= startWindow.to : true;
-      });
-
-    const bestHour = candidateHours
-      .map((hour) => ({
-        hour,
-        score: scoreRunHour(hour) - ((input.preferences?.avoidHighUv ?? true) ? hour.uvIndex * 4 : 0)
-      }))
-      .sort((left, right) => right.score - left.score)[0]?.hour;
-
-    if (!bestHour) {
-      throw new AppError("未能推导出适合跑步的时间窗口，请调整偏好后重试。", 400);
     }
 
     const preferredMin = input.preferences?.preferredDistanceKm?.min ?? 4;
@@ -216,66 +273,83 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
     const preferredCenter = (preferredMin + preferredMax) / 2;
     const paceMinPerKm = input.preferences?.paceMinPerKm ?? 6.5;
     const preferredTerrains = new Set(input.preferences?.terrain ?? []);
-    const weatherLabel = summarizeDailyWeather(targetDay);
+    const selectedRoutes = await withExecutionStage(RUN_STAGE_IDS.routing, async () => {
+      const candidatePois = pois.slice(0, 10);
+      logPlanExecution("info", `开始为 ${candidatePois.length} 个候选地点计算步行往返路线`);
 
-    const routeCandidates = await Promise.all(
-      pois.slice(0, 10).map(async (poi) => {
-        try {
-          const route = await context.routingProvider.getWalkingRoute(input.location, poi.coordinates);
-          const distanceKm = Number(((route.distanceMeters * 2) / 1000).toFixed(1));
-          const estTimeMin = Math.max(15, Math.round(distanceKm * paceMinPerKm));
-          const distanceScore = 100 - Math.abs(distanceKm - preferredCenter) * 16;
-          const terrainScore = preferredTerrains.size === 0
-            ? 0
-            : poi.terrains.filter((terrain) => preferredTerrains.has(terrain)).length * 12;
+      const routeCandidates = await Promise.all(
+        candidatePois.map(async (poi) => {
+          try {
+            const route = await context.routingProvider.getWalkingRoute(input.location, poi.coordinates);
+            const distanceKm = Number(((route.distanceMeters * 2) / 1000).toFixed(1));
+            const estTimeMin = Math.max(15, Math.round(distanceKm * paceMinPerKm));
+            const distanceScore = 100 - Math.abs(distanceKm - preferredCenter) * 16;
+            const terrainScore = preferredTerrains.size === 0
+              ? 0
+              : poi.terrains.filter((terrain) => preferredTerrains.has(terrain)).length * 12;
 
-          return {
-            poi,
-            route,
-            distanceKm,
-            estTimeMin,
-            score: distanceScore + terrainScore - poi.distanceMeters / 700
-          };
-        } catch {
-          return null;
+            logPlanExecution("info", `路线测距成功：${poi.name}，往返约 ${distanceKm} km，预计 ${estTimeMin} 分钟`);
+
+            return {
+              poi,
+              route,
+              distanceKm,
+              estTimeMin,
+              score: distanceScore + terrainScore - poi.distanceMeters / 700
+            };
+          } catch (error) {
+            logPlanExecution("warn", `路线测距失败：${poi.name}`, toErrorMessage(error));
+            return null;
+          }
+        })
+      );
+
+      const successfulRoutes = routeCandidates.filter((item): item is NonNullable<typeof item> => item !== null);
+      logPlanExecution("info", `路线测距结束：${successfulRoutes.length}/${candidatePois.length} 个候选地点成功返回路径`);
+
+      const routes = successfulRoutes
+        .filter((item) => item.distanceKm >= Math.max(1.5, preferredMin * 0.7) && item.distanceKm <= preferredMax * 1.5)
+        .sort((left, right) => right.score - left.score)
+        .slice(0, 3)
+        .map((item) => ({
+          name: item.poi.name,
+          distanceKm: item.distanceKm,
+          estTimeMin: item.estTimeMin,
+          why: buildRouteWhy(item.poi, weatherData.weatherLabel),
+          tags: item.poi.terrains,
+          navigationUrl: context.navigationProvider.buildNavigationUrl(item.poi.coordinates, item.poi.name),
+          routeSource: item.route.source,
+          poiCoordinates: item.poi.coordinates
+        }));
+
+      if (routes.length === 0) {
+        if (successfulRoutes.length === 0) {
+          logPlanExecution("error", "所有候选地点的路线测距都失败了");
+          throw new AppError("路径服务当前较繁忙，请稍后重试。", 503);
         }
-      })
-    );
 
-    const successfulRoutes = routeCandidates.filter((item): item is NonNullable<typeof item> => item !== null);
-
-    const selectedRoutes = successfulRoutes
-      .filter((item) => item.distanceKm >= Math.max(1.5, preferredMin * 0.7) && item.distanceKm <= preferredMax * 1.5)
-      .sort((left, right) => right.score - left.score)
-      .slice(0, 3)
-      .map((item) => ({
-        name: item.poi.name,
-        distanceKm: item.distanceKm,
-        estTimeMin: item.estTimeMin,
-        why: buildRouteWhy(item.poi, weatherLabel),
-        tags: item.poi.terrains,
-        navigationUrl: context.navigationProvider.buildNavigationUrl(item.poi.coordinates, item.poi.name),
-        routeSource: item.route.source,
-        poiCoordinates: item.poi.coordinates
-      }));
-
-    if (selectedRoutes.length === 0) {
-      if (successfulRoutes.length === 0) {
-        throw new AppError("路径服务当前较繁忙，请稍后重试。", 503);
+        logPlanExecution("error", "已有测距结果，但都不符合当前里程偏好");
+        throw new AppError("附近真实路线与当前里程偏好不匹配，请放宽距离后重试。", 404);
       }
 
-      throw new AppError("附近真实路线与当前里程偏好不匹配，请放宽距离后重试。", 404);
-    }
+      logPlanExecution("info", `路线筛选完成：最终保留 ${routes.length} 条建议`);
+      return routes;
+    });
 
     const basePlan: RunPlan = {
       type: "run_tomorrow",
       city: place.city,
-      targetDate: targetDay.date,
-      weatherSummary: weatherLabel,
-      bestTime: bestHour.time.split("T")[1] ?? "07:00",
-      reason: buildWeatherReason(bestHour),
+      targetDate: weatherData.targetDay.date,
+      weatherSummary: weatherData.weatherLabel,
+      bestTime: weatherData.bestHour.time.split("T")[1] ?? "07:00",
+      reason: buildWeatherReason(weatherData.bestHour),
       routes: selectedRoutes,
-      tips: buildTips(bestHour.time.split("T")[1] ?? "07:00", targetDay.temperatureMaxC, targetDay.precipitationProbabilityMax, targetDay.uvIndexMax),
+      tips: buildTips(
+        weatherData.bestHour.time.split("T")[1] ?? "07:00",
+        weatherData.targetDay.temperatureMaxC,
+        weatherData.targetDay.precipitationProbabilityMax,
+        weatherData.targetDay.uvIndexMax
+      ),
       meta: {
         weatherProvider: context.weatherProvider.name,
         poiProvider: context.poiProvider.name,
@@ -285,6 +359,20 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
       }
     };
 
-    return enhancePlan(context, basePlan);
+    if (!context.aiProvider) {
+      markExecutionStage(RUN_STAGE_IDS.ai, "skipped");
+      logPlanExecution("info", "未启用 AI 润色，直接返回基于真实数据的结果", undefined, RUN_STAGE_IDS.ai);
+      return basePlan;
+    }
+
+    return await withExecutionStage(RUN_STAGE_IDS.ai, async () => {
+      logPlanExecution("info", "开始执行 AI 文案润色");
+      const enhanced = await enhancePlan(context, basePlan);
+      logPlanExecution(
+        "info",
+        enhanced.meta.aiEnhanced ? "AI 文案润色完成" : "AI 未产出可用结果，已保留原始文案"
+      );
+      return enhanced;
+    });
   }
 };

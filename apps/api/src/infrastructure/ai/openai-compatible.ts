@@ -1,6 +1,7 @@
 import type { AiProvider } from "../../domain/service-types";
 import { env } from "../../config/env";
 import { AppError, normalizeUpstreamServiceError } from "../../lib/errors";
+import { logPlanExecution } from "../../lib/plan-execution";
 import { buildAiApiUrl } from "./api-url";
 
 const USER_AGENT = "GoPlan/0.1 (+https://local.dev)";
@@ -28,6 +29,7 @@ export class OpenAiCompatibleProvider implements AiProvider {
       const timeout = setTimeout(() => controller.abort(), env.aiTimeoutMs);
 
       try {
+        logPlanExecution("info", `开始请求 AI 服务（第 ${attempt + 1} 次）`, env.aiModel);
         const response = await fetch(buildAiApiUrl(env.aiBaseUrl, "/chat/completions"), {
           method: "POST",
           signal: controller.signal,
@@ -49,6 +51,7 @@ export class OpenAiCompatibleProvider implements AiProvider {
         });
 
         if (response.status === 429 && attempt < MAX_RETRIES) {
+          logPlanExecution("warn", `AI 服务限流，准备重试（第 ${attempt + 1} 次）`);
           const ra = response.headers.get("retry-after");
           const delaySecs = ra ? Number(ra) : undefined;
           const delayMs = (delaySecs && Number.isFinite(delaySecs))
@@ -59,17 +62,21 @@ export class OpenAiCompatibleProvider implements AiProvider {
         }
 
         if (!response.ok) {
+          logPlanExecution("warn", `AI 服务返回非成功状态：${response.status} ${response.statusText}`);
           throw new AppError(`请求外部服务失败：${response.status} ${response.statusText}`, 502);
         }
 
         const content = await this.readStream(response);
         if (!content) {
+          logPlanExecution("warn", "AI 服务返回空内容");
           throw new AppError("AI 服务未返回内容", 502);
         }
 
+        logPlanExecution("info", `AI 服务返回成功，文本长度 ${content.length}`);
         return content;
       } catch (error) {
         lastError = error;
+        logPlanExecution("warn", "AI 请求失败", error instanceof Error ? error.message : String(error));
         const normalized = normalizeUpstreamServiceError(error, {
           certificateMessage: "AI 服务证书校验失败，请稍后重试。",
           networkMessage: "AI 服务网络连接失败，请稍后重试。"
@@ -77,6 +84,7 @@ export class OpenAiCompatibleProvider implements AiProvider {
 
         if (normalized instanceof AppError && normalized.status === 504) {
           if (attempt < MAX_RETRIES) {
+            logPlanExecution("warn", `AI 请求超时，准备重试（第 ${attempt + 1} 次）`);
             await new Promise(r => setTimeout(r, BASE_DELAY_MS * 2 ** attempt));
             continue;
           }

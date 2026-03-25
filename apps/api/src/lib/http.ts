@@ -1,4 +1,5 @@
 import { AppError, normalizeUpstreamServiceError } from "./errors";
+import { logPlanExecution } from "./plan-execution";
 
 const USER_AGENT = "GoPlan/0.1 (+https://local.dev)";
 
@@ -37,6 +38,7 @@ async function fetchWithTimeout(
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 15_000);
 
   try {
+    logPlanExecution("info", `请求外部服务：${new URL(url).host}`, `${options.method ?? "GET"} ${url}`);
     const response = await fetch(url, {
       ...options,
       signal: controller.signal,
@@ -48,6 +50,7 @@ async function fetchWithTimeout(
     });
 
     if (!response.ok) {
+      logPlanExecution("warn", `外部服务返回非成功状态：${response.status} ${response.statusText}`, url);
       const status = RETRYABLE_STATUS.has(response.status) ? response.status : 502;
       const err = new AppError(`请求外部服务失败：${response.status} ${response.statusText}`, status);
       if (response.status === 429) {
@@ -60,8 +63,10 @@ async function fetchWithTimeout(
       throw err;
     }
 
+    logPlanExecution("info", `外部服务响应成功：${response.status}`, url);
     return response;
   } catch (error) {
+    logPlanExecution("warn", "外部服务请求失败", error instanceof Error ? error.message : String(error));
     const normalized = normalizeUpstreamServiceError(error);
     if (normalized instanceof AppError) {
       throw normalized;
@@ -76,10 +81,14 @@ async function withRetry<T>(fn: () => Promise<T>, retries: number): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
+      if (attempt > 0) {
+        logPlanExecution("info", `开始第 ${attempt + 1} 次重试`);
+      }
       return await fn();
     } catch (error) {
       lastError = error;
       if (attempt < retries && isRetryable(error)) {
+        logPlanExecution("warn", `请求可重试，等待后重试（${attempt + 1}/${retries + 1}）`);
         await sleep(retryDelayMs(error, attempt));
         continue;
       }
