@@ -29,6 +29,29 @@ function mockFetchOk(chunks: string[]) {
   );
 }
 
+function buildTimedSSEStream(chunks: Array<{ content: string; delayMs?: number }>): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+
+  return new ReadableStream({
+    async start(controller) {
+      for (const chunk of chunks) {
+        if (chunk.delayMs) {
+          await Bun.sleep(chunk.delayMs);
+        }
+
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({ choices: [{ delta: { content: chunk.content }, finish_reason: null }] })}\n\n`
+          )
+        );
+      }
+
+      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      controller.close();
+    }
+  });
+}
+
 async function captureExecutionLogs(task: () => Promise<unknown>) {
   const events: PlanExecutionStreamEvent[] = [];
 
@@ -53,10 +76,12 @@ async function captureExecutionLogs(task: () => Promise<unknown>) {
 describe("OpenAiCompatibleProvider", () => {
   let originalApiKey: string | undefined;
   let originalBaseUrl: string;
+  let originalTimeoutMs: number;
 
   beforeEach(() => {
     originalApiKey = env.aiApiKey;
     originalBaseUrl = env.aiBaseUrl;
+    originalTimeoutMs = env.aiTimeoutMs;
     (env as Record<string, unknown>).aiApiKey = "test-key";
     (env as Record<string, unknown>).aiBaseUrl = "https://ai.huan666.de/v1";
   });
@@ -64,6 +89,7 @@ describe("OpenAiCompatibleProvider", () => {
   afterEach(() => {
     (env as Record<string, unknown>).aiApiKey = originalApiKey;
     (env as Record<string, unknown>).aiBaseUrl = originalBaseUrl;
+    (env as Record<string, unknown>).aiTimeoutMs = originalTimeoutMs;
     mock.restore();
   });
 
@@ -187,6 +213,22 @@ describe("OpenAiCompatibleProvider", () => {
     expect(result).toBe("actual content");
   });
 
+  it("logs thinking progress before visible output arrives", async () => {
+    mockFetchOk(["<think>internal reasoning", " still hidden</think>", '{"result":"clean"}']);
+    const provider = new OpenAiCompatibleProvider();
+
+    const logs = await captureExecutionLogs(async () => {
+      await provider.generateText({ system: "s", user: "u" });
+    });
+
+    const thinkingLog = logs.find((entry) => entry.message === "AI 推理中");
+    const progressLog = logs.find((entry) => entry.message === "AI 流式输出接收中");
+    expect(thinkingLog).toBeDefined();
+    expect(thinkingLog?.detail).toContain("\"phase\":\"thinking\"");
+    expect(thinkingLog?.detail).not.toContain("internal reasoning");
+    expect(progressLog).toBeDefined();
+  });
+
   it("throws when all content is inside think blocks", async () => {
     mockFetchOk(["<think>only reasoning</think>"]);
     const provider = new OpenAiCompatibleProvider();
@@ -287,6 +329,31 @@ describe("OpenAiCompatibleProvider", () => {
 
     const result = await provider.generateText({ system: "s", user: "u" });
     expect(result).toBe("valid");
+  });
+
+  it("aborts when the response stream stays idle for too long", async () => {
+    const stream = buildTimedSSEStream([{ content: "late", delayMs: 80 }]);
+    const provider = new OpenAiCompatibleProvider() as unknown as {
+      readStream(response: Response, idleTimeoutMs: number): Promise<string>;
+    };
+
+    await expect(provider.readStream(new Response(stream, { status: 200 }), 30)).rejects.toMatchObject({
+      name: "AbortError"
+    });
+  });
+
+  it("allows long streaming responses when chunks keep arriving", async () => {
+    (env as Record<string, unknown>).aiTimeoutMs = 40;
+    const stream = buildTimedSSEStream([
+      { content: "He", delayMs: 10 },
+      { content: "ll", delayMs: 20 },
+      { content: "o", delayMs: 20 }
+    ]);
+    spyOn(globalThis, "fetch").mockResolvedValue(new Response(stream, { status: 200 }));
+    const provider = new OpenAiCompatibleProvider();
+
+    const result = await provider.generateText({ system: "s", user: "u" });
+    expect(result).toBe("Hello");
   });
 
   it("handles multi-chunk SSE stream delivered in small pieces", async () => {

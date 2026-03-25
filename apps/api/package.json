@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun --env-file ../../.env --watch src/index.ts",
+    "test": "bun test",
     "typecheck": "bunx tsc -p tsconfig.json --noEmit",
     "build": "bunx tsc -p tsconfig.json"
   },

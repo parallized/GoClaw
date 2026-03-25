@@ -38,15 +38,20 @@ interface StreamProgressState {
   streamChunks: number;
   visibleChunks: number;
   visibleChars: number;
+  hiddenChunks: number;
+  hiddenChars: number;
   estimatedCompletionTokens: number;
   promptTokens?: number;
   completionTokens?: number;
   totalTokens?: number;
   finishReason?: string | null;
   lastVisibleDelta?: string;
-  lastLoggedChars: number;
-  lastLoggedChunks: number;
-  hasLoggedProgress: boolean;
+  lastLoggedVisibleChars: number;
+  lastLoggedVisibleChunks: number;
+  hasLoggedVisibleProgress: boolean;
+  lastLoggedHiddenChars: number;
+  lastLoggedHiddenChunks: number;
+  hasLoggedThinkingProgress: boolean;
 }
 
 function sanitizePreviewText(value: string, limit = REQUEST_PREVIEW_LIMIT): string {
@@ -112,33 +117,67 @@ function buildStreamProgressDetail(progress: StreamProgressState, phase: "partia
     streamChunks: progress.streamChunks,
     visibleChunks: progress.visibleChunks,
     visibleChars: progress.visibleChars,
+    hiddenChunks: progress.hiddenChunks,
+    hiddenChars: progress.hiddenChars,
     ...tokenInfo,
     lastVisiblePreview: progress.lastVisibleDelta ? sanitizePreviewText(progress.lastVisibleDelta, 72) : undefined,
     finishReason: progress.finishReason ?? undefined
   });
 }
 
-function shouldLogStreamProgress(progress: StreamProgressState): boolean {
+function buildThinkingProgressDetail(progress: StreamProgressState): string {
+  return JSON.stringify({
+    phase: "thinking",
+    streamChunks: progress.streamChunks,
+    hiddenChunks: progress.hiddenChunks,
+    hiddenChars: progress.hiddenChars
+  });
+}
+
+function shouldLogVisibleProgress(progress: StreamProgressState): boolean {
   if (!progress.visibleChars) {
     return false;
   }
 
-  if (!progress.hasLoggedProgress) {
+  if (!progress.hasLoggedVisibleProgress) {
     return true;
   }
 
-  return progress.visibleChars - progress.lastLoggedChars >= STREAM_PROGRESS_CHAR_STEP
-    || progress.visibleChunks - progress.lastLoggedChunks >= STREAM_PROGRESS_CHUNK_STEP;
+  return progress.visibleChars - progress.lastLoggedVisibleChars >= STREAM_PROGRESS_CHAR_STEP
+    || progress.visibleChunks - progress.lastLoggedVisibleChunks >= STREAM_PROGRESS_CHUNK_STEP;
 }
 
-function markStreamProgressLogged(progress: StreamProgressState) {
-  progress.hasLoggedProgress = true;
-  progress.lastLoggedChars = progress.visibleChars;
-  progress.lastLoggedChunks = progress.visibleChunks;
+function markVisibleProgressLogged(progress: StreamProgressState) {
+  progress.hasLoggedVisibleProgress = true;
+  progress.lastLoggedVisibleChars = progress.visibleChars;
+  progress.lastLoggedVisibleChunks = progress.visibleChunks;
 }
 
-function extractVisibleDelta(delta: string, state: { insideThink: boolean }): string {
+function shouldLogThinkingProgress(progress: StreamProgressState): boolean {
+  if (!progress.hiddenChars) {
+    return false;
+  }
+
+  if (!progress.hasLoggedThinkingProgress) {
+    return true;
+  }
+
+  return progress.hiddenChars - progress.lastLoggedHiddenChars >= STREAM_PROGRESS_CHAR_STEP
+    || progress.hiddenChunks - progress.lastLoggedHiddenChunks >= STREAM_PROGRESS_CHUNK_STEP;
+}
+
+function markThinkingProgressLogged(progress: StreamProgressState) {
+  progress.hasLoggedThinkingProgress = true;
+  progress.lastLoggedHiddenChars = progress.hiddenChars;
+  progress.lastLoggedHiddenChunks = progress.hiddenChunks;
+}
+
+function extractVisibleDelta(
+  delta: string,
+  state: { insideThink: boolean }
+): { visible: string; hiddenChars: number } {
   let visible = "";
+  let hiddenChars = 0;
 
   for (let i = 0; i < delta.length; i++) {
     if (!state.insideThink && delta.startsWith("<think>", i)) {
@@ -147,12 +186,40 @@ function extractVisibleDelta(delta: string, state: { insideThink: boolean }): st
     } else if (state.insideThink && delta.startsWith("</think>", i)) {
       state.insideThink = false;
       i += 7;
+    } else if (state.insideThink) {
+      hiddenChars += 1;
     } else if (!state.insideThink) {
       visible += delta[i];
     }
   }
 
-  return visible;
+  return { visible, hiddenChars };
+}
+
+function createAbortError(message: string): DOMException {
+  return new DOMException(message, "AbortError");
+}
+
+async function readChunkWithIdleTimeout(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  idleTimeoutMs: number
+): Promise<ReadableStreamReadResult<Uint8Array>> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race([
+      reader.read(),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => {
+          reject(createAbortError("AI 流式响应超时"));
+        }, idleTimeoutMs);
+      })
+    ]);
+  } finally {
+    if (timeout !== undefined) {
+      clearTimeout(timeout);
+    }
+  }
 }
 
 export class OpenAiCompatibleProvider implements AiProvider {
@@ -166,7 +233,10 @@ export class OpenAiCompatibleProvider implements AiProvider {
     let lastError: unknown;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), env.aiTimeoutMs);
+      let requestTimeout: ReturnType<typeof setTimeout> | undefined = setTimeout(
+        () => controller.abort(),
+        env.aiTimeoutMs
+      );
 
       try {
         const endpoint = buildAiApiUrl(env.aiBaseUrl, "/chat/completions");
@@ -198,6 +268,10 @@ export class OpenAiCompatibleProvider implements AiProvider {
           },
           body: JSON.stringify(requestBody)
         });
+        if (requestTimeout !== undefined) {
+          clearTimeout(requestTimeout);
+          requestTimeout = undefined;
+        }
 
         if (response.status === 429 && attempt < MAX_RETRIES) {
           logPlanExecution("warn", `AI 服务限流，准备重试（第 ${attempt + 1} 次）`);
@@ -215,7 +289,7 @@ export class OpenAiCompatibleProvider implements AiProvider {
           throw new AppError(`请求外部服务失败：${response.status} ${response.statusText}`, 502);
         }
 
-        const content = await this.readStream(response);
+        const content = await this.readStream(response, env.aiTimeoutMs);
         if (!content) {
           logPlanExecution("warn", "AI 服务返回空内容");
           throw new AppError("AI 服务未返回内容", 502);
@@ -227,6 +301,7 @@ export class OpenAiCompatibleProvider implements AiProvider {
         lastError = error;
         logPlanExecution("warn", "AI 请求失败", error instanceof Error ? error.message : String(error));
         const normalized = normalizeUpstreamServiceError(error, {
+          timeoutMessage: "AI 服务响应超时，请稍后重试。",
           certificateMessage: "AI 服务证书校验失败，请稍后重试。",
           networkMessage: "AI 服务网络连接失败，请稍后重试。"
         });
@@ -241,14 +316,16 @@ export class OpenAiCompatibleProvider implements AiProvider {
 
         throw normalized;
       } finally {
-        clearTimeout(timeout);
+        if (requestTimeout !== undefined) {
+          clearTimeout(requestTimeout);
+        }
       }
     }
 
     throw lastError;
   }
 
-  private async readStream(response: Response): Promise<string> {
+  private async readStream(response: Response, idleTimeoutMs: number): Promise<string> {
     const body = response.body;
     if (!body) {
       throw new AppError("AI 服务返回空响应体", 502);
@@ -263,15 +340,20 @@ export class OpenAiCompatibleProvider implements AiProvider {
       streamChunks: 0,
       visibleChunks: 0,
       visibleChars: 0,
+      hiddenChunks: 0,
+      hiddenChars: 0,
       estimatedCompletionTokens: 0,
-      lastLoggedChars: 0,
-      lastLoggedChunks: 0,
-      hasLoggedProgress: false
+      lastLoggedVisibleChars: 0,
+      lastLoggedVisibleChunks: 0,
+      hasLoggedVisibleProgress: false,
+      lastLoggedHiddenChars: 0,
+      lastLoggedHiddenChunks: 0,
+      hasLoggedThinkingProgress: false
     };
 
     try {
       while (true) {
-        const { done, value } = await reader.read();
+        const { done, value } = await readChunkWithIdleTimeout(reader, idleTimeoutMs);
         if (done) {
           break;
         }
@@ -307,7 +389,17 @@ export class OpenAiCompatibleProvider implements AiProvider {
             }
 
             const delta = choice?.delta?.content ?? "";
-            const visibleDelta = extractVisibleDelta(delta, thinkState);
+            const { visible: visibleDelta, hiddenChars } = extractVisibleDelta(delta, thinkState);
+            if (hiddenChars > 0) {
+              progress.hiddenChunks += 1;
+              progress.hiddenChars += hiddenChars;
+
+              if (!progress.visibleChars && shouldLogThinkingProgress(progress)) {
+                logPlanExecution("info", "AI 推理中", buildThinkingProgressDetail(progress));
+                markThinkingProgressLogged(progress);
+              }
+            }
+
             if (!visibleDelta) {
               continue;
             }
@@ -318,15 +410,18 @@ export class OpenAiCompatibleProvider implements AiProvider {
             progress.estimatedCompletionTokens = estimateCompletionTokens(result);
             progress.lastVisibleDelta = visibleDelta;
 
-            if (shouldLogStreamProgress(progress)) {
+            if (shouldLogVisibleProgress(progress)) {
               logPlanExecution("info", "AI 流式输出接收中", buildStreamProgressDetail(progress, "partial"));
-              markStreamProgressLogged(progress);
+              markVisibleProgressLogged(progress);
             }
           } catch {
             // skip malformed chunks
           }
         }
       }
+    } catch (error) {
+      await reader.cancel("AI stream aborted").catch(() => undefined);
+      throw error;
     } finally {
       reader.releaseLock();
     }
