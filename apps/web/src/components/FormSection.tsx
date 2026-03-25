@@ -145,7 +145,8 @@ function RunPreferencesFields({ form, onChange }: { form: RunPlanRequest; onChan
         </label>
       </div>
 
-      <div className="mt-10 border-t border-solid border-white/5 pt-8">
+      <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent my-8"></div>
+      <div>
         <div className="text-secondary text-[11px] font-bold uppercase tracking-wider mb-5">偏好地形</div>
         <div className="flex flex-wrap gap-2.5">
           {runTerrains.map((t) => (
@@ -193,7 +194,8 @@ function PhotoPreferencesFields({ form, onChange }: { form: PhotoWeekRequest; on
         </label>
       </div>
 
-      <div className="mt-10 border-t border-solid border-white/5 pt-8">
+      <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent my-8"></div>
+      <div>
         <div className="text-secondary text-[11px] font-bold uppercase tracking-wider mb-5">偏好题材</div>
         <div className="flex flex-wrap gap-2.5">
           {photoThemes.map((t) => (

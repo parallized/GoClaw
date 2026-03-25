@@ -315,10 +315,10 @@ export function PlanResultView({
       <div className="space-y-12">
         <ExecutionPanel stages={stages} stageStatuses={stageStatuses} logs={logs} loading={loading} />
         {!loading && stages.length === 0 && logs.length === 0 && (
-          <div className="h-96 flex flex-col items-center justify-center p-12 text-center border-2 border-dashed border-edge rounded-md opacity-60">
-            <div className="text-5xl mb-6">✨</div>
-            <div className="text-sm font-bold text-tertiary uppercase tracking-widest">选择场景并生成规划</div>
-            <div className="text-xs text-tertiary mt-2">此区域将展示你的专属内容</div>
+          <div className="h-[600px] flex flex-col items-center justify-center p-12 text-center rounded-2xl bg-surface/5 border border-solid border-white/5 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.1)] transition-all hover:bg-surface/10">
+            <div className="text-6xl mb-8 opacity-70 animate-pulse drop-shadow-[0_0_15px_rgba(255,255,255,0.3)]">✨</div>
+            <div className="text-sm font-bold text-primary uppercase tracking-widest mb-3 tracking-[0.2em]">选择场景并生成规划</div>
+            <div className="text-[10px] text-tertiary tracking-[0.1em] uppercase font-bold">此区域将展示你的专属内容</div>
           </div>
         )}
       </div>

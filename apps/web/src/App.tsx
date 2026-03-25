@@ -155,7 +155,7 @@ export function App() {
 
           {activeScenario && (
             <div className="flex items-center gap-4 shrink-0 p-1">
-              <div className="w-10 h-10 rounded-lg bg-surface-gray flex items-center justify-center text-primary font-bold text-lg border border-solid border-edge">
+              <div className="w-10 h-10 rounded-xl bg-surface/30 backdrop-blur-md flex items-center justify-center text-primary font-bold text-lg border border-solid border-white/5 shadow-sm">
                 {activeScenario.title[0]}
               </div>
               <div>
