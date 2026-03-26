@@ -24,18 +24,18 @@ export function ScenarioCard({ scenario, active, onSelect }: ScenarioCardProps) 
 
       <div className="mb-6 flex flex-wrap gap-2 mt-auto">
         {scenario.capabilities.map((cap) => (
-          <span key={cap} className="inline-flex items-center rounded-md py-0.5 px-2 text-[10px] font-bold bg-surface-gray text-secondary uppercase tracking-wider border border-solid border-edge">
+          <span key={cap} className="inline-flex items-center rounded-md py-1 px-3 text-sm font-bold bg-surface-gray text-secondary uppercase tracking-wider border border-solid border-edge">
             {cap}
           </span>
         ))}
       </div>
 
       <div className="flex items-center justify-between w-full mt-auto pt-4 border-none">
-        <div className="inline-flex items-center gap-1.5 text-[10px] font-bold shrink-0 text-tertiary uppercase tracking-widest">
-          <span className="w-1.5 h-1.5 rounded-full bg-accent-green"></span>
+        <div className="inline-flex items-center gap-1.5 text-sm font-bold shrink-0 text-tertiary uppercase tracking-widest">
+          <span className="w-2 h-2 rounded-full bg-accent-green"></span>
           ~{(scenario.estimatedLatencyMs / 1000).toFixed(1)}s
         </div>
-        <div className="text-accent-indigo text-xs font-bold flex items-center gap-1 group-hover:gap-2 transition-all uppercase tracking-widest">
+        <div className="text-accent-indigo text-sm font-bold flex items-center gap-1 group-hover:gap-2 transition-all uppercase tracking-widest">
           {scenario.cta} <span>→</span>
         </div>
       </div>

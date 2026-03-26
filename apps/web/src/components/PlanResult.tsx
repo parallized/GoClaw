@@ -1,6 +1,5 @@
 import type {
   PhotoWeekPlan,
-  PlanExecutionLogEntry,
   PlanExecutionStage,
   PlanExecutionStageStatus,
   PlanMeta,
@@ -34,17 +33,6 @@ function formatStageStatusLabel(status: PlanExecutionStageStatus): string {
   }
 }
 
-function formatLogLevelLabel(level: PlanExecutionLogEntry["level"]): string {
-  switch (level) {
-    case "warn":
-      return "提示";
-    case "error":
-      return "错误";
-    default:
-      return "日志";
-  }
-}
-
 function ProcessView({ meta }: { meta: PlanMeta }) {
   return (
     <section className="mt-12">
@@ -52,7 +40,7 @@ function ProcessView({ meta }: { meta: PlanMeta }) {
         <h3 className="text-sm font-bold m-0 text-primary flex items-center gap-2 uppercase tracking-widest">
           <span>🧠</span> 演算逻辑
         </h3>
-        <div className="text-tertiary text-[10px] font-bold uppercase tracking-widest flex flex-wrap gap-3">
+        <div className="text-tertiary text-sm font-bold uppercase tracking-widest flex flex-wrap gap-3">
           <span>天气: {meta.weatherProvider}</span>
           <span>地点: {meta.poiProvider}</span>
           <span>路线: {meta.routingProvider}</span>
@@ -63,13 +51,13 @@ function ProcessView({ meta }: { meta: PlanMeta }) {
       <div className="space-y-6">
         {meta.process.map((step, idx) => (
           <article key={`${step.title}-${idx}`} className="flex items-start gap-5">
-            <div className="w-6 h-6 rounded-full bg-surface-gray flex items-center justify-center shrink-0 font-bold text-tertiary text-[10px] border border-solid border-edge">
+            <div className="w-8 h-8 rounded-full bg-surface-gray flex items-center justify-center shrink-0 font-bold text-tertiary text-sm border-none">
               {idx + 1}
             </div>
             <div className="flex-1 pb-6 border-none">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
                 <div className="font-bold text-primary">{step.title}</div>
-                <div className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-widest ${step.outcome === "success" ? "text-accent-green bg-accent-green/10" : "text-accent-orange bg-accent-orange/10"}`}>
+                <div className={`text-sm font-bold px-3 py-1 rounded uppercase tracking-widest ${step.outcome === "success" ? "n-tag-green" : "n-tag-orange"}`}>
                   {formatOutcomeLabel(step.outcome)}
                 </div>
               </div>
@@ -82,18 +70,16 @@ function ProcessView({ meta }: { meta: PlanMeta }) {
   );
 }
 
-function ExecutionPanel({
+export function ExecutionPanel({
   stages,
   stageStatuses,
-  logs,
   loading
 }: {
   stages: PlanExecutionStage[];
   stageStatuses: Record<string, PlanExecutionStageStatus>;
-  logs: PlanExecutionLogEntry[];
   loading: boolean;
 }) {
-  if (!loading && stages.length === 0 && logs.length === 0) {
+  if (!loading && stages.length === 0) {
     return null;
   }
 
@@ -101,41 +87,26 @@ function ExecutionPanel({
     <section className="mb-12">
       <div className="flex flex-wrap items-center gap-4 justify-between mb-8">
         <h3 className="text-sm font-bold m-0 text-primary flex items-center gap-2 uppercase tracking-widest">
-          <span>📡</span> 实时监控
+          <span>📡</span> 执行状态
         </h3>
-        <div className="text-tertiary text-[10px] font-bold uppercase tracking-widest">
+        <div className="text-tertiary text-sm font-bold uppercase tracking-widest">
           {loading ? "实时连接中…" : "任务已结束"}
         </div>
       </div>
 
       <div className="space-y-4">
         {stages.map((stage) => {
-          const stageLogs = logs.filter((entry) => entry.stageId === stage.id);
           const status = stageStatuses[stage.id] ?? "pending";
           return (
-            <article key={stage.id} className={`rounded-md p-5 border border-solid transition-colors ${status === "running" ? "border-accent-blue bg-accent-blue/5" : "border-edge bg-surface-gray"}`}>
+            <article key={stage.id} className={`rounded-xl p-6 transition-colors ${status === "running" ? "bg-accent-blue/10" : "bg-surface-gray"}`}>
               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                 <div>
                   <div className="font-bold text-primary">{stage.order + 1}. {stage.title}</div>
                   {stage.detail && <p className="text-secondary text-sm leading-relaxed mt-2 mb-0">{stage.detail}</p>}
                 </div>
                 <div className="text-right shrink-0">
-                  <div className={`text-[10px] font-bold uppercase tracking-widest ${status === "running" ? "text-accent-blue" : (status === "completed" ? "text-accent-green" : "text-tertiary")}`}>{formatStageStatusLabel(status)}</div>
+                  <div className={`text-sm font-bold uppercase tracking-widest ${status === "running" ? "text-accent-blue" : (status === "completed" ? "text-accent-green" : "text-tertiary")}`}>{formatStageStatusLabel(status)}</div>
                 </div>
-              </div>
-
-              <div className="space-y-2 mt-4">
-                {stageLogs.map((entry, idx) => (
-                  <div key={`${entry.timestamp}-${idx}`} className="text-xs">
-                    <div className="flex items-center gap-2 text-tertiary font-bold uppercase tracking-widest text-[9px]">
-                      <span>{formatLogLevelLabel(entry.level)}</span>
-                      <span>·</span>
-                      <span>{new Date(entry.timestamp).toLocaleTimeString("zh-CN", { hour12: false })}</span>
-                    </div>
-                    <div className="mt-1 text-secondary leading-relaxed">{entry.message}</div>
-                    {entry.detail && <div className="text-secondary leading-relaxed">{entry.detail}</div>}
-                  </div>
-                ))}
               </div>
             </article>
           );
@@ -149,15 +120,15 @@ function RunPlanView({ plan }: { plan: RunPlan }) {
   return (
     <div className="space-y-12 animate-fade-in">
       <header>
-        <div className="text-accent-green text-[10px] font-bold uppercase tracking-widest mb-4 flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-accent-green"></span> 最佳出发时间
+        <div className="text-accent-green text-sm font-bold uppercase tracking-widest mb-4 flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-accent-green"></span> 最佳出发时间
         </div>
         <div className="text-5xl font-bold text-primary tracking-tight mb-6">{plan.bestTime}</div>
         <p className="text-secondary text-lg leading-relaxed max-w-2xl">{plan.reason}</p>
         <div className="mt-8 flex flex-wrap gap-3">
-          <span className="bg-surface-gray text-secondary px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest border border-solid border-edge">{plan.city}</span>
-          <span className="bg-surface-gray text-secondary px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest border border-solid border-edge">{plan.targetDate}</span>
-          <span className="bg-surface-gray text-secondary px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest border border-solid border-edge">{plan.weatherSummary}</span>
+          <span className="bg-surface-gray text-secondary px-4 py-2 rounded-lg text-sm font-bold uppercase tracking-widest">{plan.city}</span>
+          <span className="bg-surface-gray text-secondary px-4 py-2 rounded-lg text-sm font-bold uppercase tracking-widest">{plan.targetDate}</span>
+          <span className="bg-surface-gray text-secondary px-4 py-2 rounded-lg text-sm font-bold uppercase tracking-widest">{plan.weatherSummary}</span>
         </div>
       </header>
 
@@ -167,37 +138,37 @@ function RunPlanView({ plan }: { plan: RunPlan }) {
         </h3>
         <div className="space-y-6">
           {plan.routes.map((route, idx) => (
-            <article key={route.name} className="n-glass-card p-6 group border-edge border-solid">
+            <article key={route.name} className="bg-surface-gray p-8 rounded-2xl group">
               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-6">
                 <div className="flex items-start gap-4">
-                  <span className="flex items-center justify-center w-6 h-6 shrink-0 rounded bg-primary text-[10px] font-bold text-white border-none">{idx + 1}</span>
+                  <span className="flex items-center justify-center w-8 h-8 shrink-0 rounded-lg bg-primary text-sm font-bold text-white border-none">{idx + 1}</span>
                   <div>
-                    <span className="font-bold text-xl text-primary block mb-2">{route.name}</span>
-                    <div className="text-tertiary flex gap-6 text-[10px] font-bold uppercase tracking-widest">
+                    <span className="font-bold text-2xl text-primary block mb-3">{route.name}</span>
+                    <div className="text-tertiary flex gap-6 text-sm font-bold uppercase tracking-widest">
                       <span className="flex items-center gap-1.5"><span>📏</span>{route.distanceKm} KM</span>
                       <span className="flex items-center gap-1.5"><span>⏱️</span>{route.estTimeMin} MIN</span>
                     </div>
                   </div>
                 </div>
-                <a className="text-[10px] font-bold text-accent-blue no-underline transition-all hover:bg-accent-blue/10 bg-accent-blue/5 px-3 py-2 rounded uppercase tracking-widest border border-solid border-accent-blue/20" href={route.navigationUrl} target="_blank" rel="noreferrer">
+                <a className="text-sm font-bold n-tag-blue no-underline transition-all hover:bg-accent-blue/10 px-4 py-2.5 rounded-lg uppercase tracking-widest flex items-center" href={route.navigationUrl} target="_blank" rel="noreferrer">
                   立即导航 ↗
                 </a>
               </div>
 
-              <p className="text-secondary mt-5 text-sm leading-relaxed">{route.why}</p>
+              <p className="text-secondary mt-6 text-base leading-relaxed">{route.why}</p>
 
-              <div className="mt-6 flex flex-wrap items-center gap-2">
+              <div className="mt-8 flex flex-wrap items-center gap-3">
                 {route.tags.map((tag) => (
-                  <span key={tag} className="text-[9px] font-bold uppercase tracking-widest bg-surface-gray text-tertiary px-2 py-0.5 rounded border border-solid border-edge">{tag}</span>
+                  <span key={tag} className="text-sm font-bold uppercase tracking-widest bg-surface text-tertiary px-3 py-1.5 rounded-lg">{tag}</span>
                 ))}
-                <span className="text-[9px] font-bold uppercase tracking-widest bg-accent-blue/10 text-accent-blue px-2 py-0.5 rounded">来源: {route.routeSource}</span>
+                <span className="text-sm font-bold uppercase tracking-widest n-tag-blue px-3 py-1.5 rounded-lg">来源: {route.routeSource}</span>
               </div>
             </article>
           ))}
         </div>
       </section>
 
-      <section className="bg-surface-gray rounded-md p-8 border border-solid border-edge">
+      <section className="bg-surface-gray rounded-md p-8 border border-edge">
         <h3 className="mb-6 text-sm font-bold uppercase tracking-widest text-primary flex items-center gap-2">
           <span>💡</span> 贴心建议
         </h3>
@@ -220,55 +191,55 @@ function PhotoWeekView({ plan }: { plan: PhotoWeekPlan }) {
   return (
     <div className="space-y-12 animate-fade-in">
       <header>
-        <div className="text-accent-pink text-[10px] font-bold uppercase tracking-widest mb-4 flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-accent-pink"></span> 周度摄影计划
+        <div className="text-accent-pink text-sm font-bold uppercase tracking-widest mb-4 flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-accent-pink"></span> 周度摄影计划
         </div>
         <div className="text-5xl font-bold text-primary tracking-tight mb-4">{plan.city}</div>
-        <div className="text-tertiary text-xs font-bold uppercase tracking-widest">{plan.rangeLabel}</div>
+        <div className="text-tertiary text-sm font-bold uppercase tracking-widest">{plan.rangeLabel}</div>
       </header>
 
       <div className="space-y-16">
         {plan.days.map((day) => (
           <section key={day.date} className="relative">
-            <header className="mb-8 border-b border-solid border-edge pb-4 flex items-baseline justify-between">
-              <h3 className="text-xl font-bold text-primary">{day.date}</h3>
-              <div className="text-accent-pink font-bold text-xs uppercase tracking-widest">{day.weather}</div>
+            <header className="mb-10 flex flex-col sm:flex-row sm:items-baseline justify-between gap-2">
+              <h3 className="text-3xl font-bold text-primary">{day.date}</h3>
+              <div className="text-accent-pink font-bold text-sm uppercase tracking-widest">{day.weather}</div>
             </header>
 
-            <div className="grid gap-8">
+            <div className="grid gap-10">
               {day.spots.map((spot) => (
-                <article key={`${day.date}-${spot.name}`} className="group flex flex-col sm:flex-row gap-8 pb-8 border-b border-dashed border-edge last:border-none last:pb-0">
+                <article key={`${day.date}-${spot.name}`} className="group flex flex-col sm:flex-row gap-10 pb-10 border-b border-white/5 last:border-none last:pb-0">
                   <div className="sm:w-1/3">
-                    <div className="font-bold text-lg text-primary mb-3 group-hover:text-accent-pink transition-colors">{spot.name}</div>
-                    <p className="text-secondary text-sm leading-relaxed">{spot.reason}</p>
-                    <div className="mt-4 flex flex-wrap gap-2">
+                    <div className="font-bold text-2xl text-primary mb-4 group-hover:text-accent-pink transition-colors">{spot.name}</div>
+                    <p className="text-secondary text-base leading-relaxed">{spot.reason}</p>
+                    <div className="mt-6 flex flex-wrap gap-3">
                       {spot.categories.map((cat) => (
-                        <span key={cat} className="text-[9px] font-bold uppercase tracking-widest bg-accent-pink/10 text-accent-pink px-2 py-0.5 rounded">{cat}</span>
+                        <span key={cat} className="text-sm font-bold uppercase tracking-widest n-tag-pink px-3 py-1.5 rounded-lg">{cat}</span>
                       ))}
                     </div>
                   </div>
 
-                  <div className="sm:w-2/3 flex flex-col gap-6">
-                    <div className="grid grid-cols-2 gap-4 bg-surface-gray p-5 rounded-md border border-solid border-edge">
-                      <div className="space-y-1">
-                        <div className="text-[9px] font-bold uppercase tracking-widest text-tertiary">最佳时间</div>
-                        <div className="font-bold text-sm text-primary">{spot.bestTime}</div>
+                  <div className="sm:w-2/3 flex flex-col gap-8">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 bg-surface-gray p-8 rounded-2xl">
+                      <div className="space-y-2">
+                        <div className="text-sm font-bold uppercase tracking-widest text-tertiary">最佳时间</div>
+                        <div className="font-bold text-base text-primary">{spot.bestTime}</div>
                       </div>
-                      <div className="space-y-1">
-                        <div className="text-[9px] font-bold uppercase tracking-widest text-tertiary">建议拍法</div>
-                        <div className="text-sm text-secondary">{spot.way}</div>
+                      <div className="space-y-2">
+                        <div className="text-sm font-bold uppercase tracking-widest text-tertiary">建议拍法</div>
+                        <div className="text-base text-secondary">{spot.way}</div>
                       </div>
-                      <div className="space-y-1">
-                        <div className="text-[9px] font-bold uppercase tracking-widest text-tertiary">参数参考</div>
-                        <div className="text-xs text-secondary font-mono">{spot.cameraSummary}</div>
+                      <div className="space-y-2">
+                        <div className="text-sm font-bold uppercase tracking-widest text-tertiary">参数参考</div>
+                        <div className="text-sm text-secondary">{spot.cameraSummary}</div>
                       </div>
-                      <div className="space-y-1">
-                        <div className="text-[9px] font-bold uppercase tracking-widest text-tertiary">拍摄贴士</div>
-                        <div className="text-xs text-secondary italic">{spot.tip}</div>
+                      <div className="space-y-2">
+                        <div className="text-sm font-bold uppercase tracking-widest text-tertiary">拍摄贴士</div>
+                        <div className="text-sm text-secondary italic">{spot.tip}</div>
                       </div>
                     </div>
 
-                    <a className="self-start text-[10px] font-bold text-accent-pink no-underline transition-all hover:bg-accent-pink/10 bg-accent-pink/5 px-3 py-2 rounded uppercase tracking-widest border border-solid border-accent-pink/20" href={spot.navigationUrl} target="_blank" rel="noreferrer">
+                    <a className="self-start text-sm font-bold n-tag-pink no-underline transition-all hover:bg-accent-pink/10 px-5 py-3 rounded-lg uppercase tracking-widest flex items-center" href={spot.navigationUrl} target="_blank" rel="noreferrer">
                       查看路线 ↗
                     </a>
                   </div>
@@ -279,7 +250,7 @@ function PhotoWeekView({ plan }: { plan: PhotoWeekPlan }) {
         ))}
       </div>
 
-      <section className="bg-surface-gray rounded-md p-8 border border-solid border-edge">
+      <section className="bg-surface-gray rounded-md p-8 border border-edge">
         <h3 className="mb-6 text-sm font-bold uppercase tracking-widest text-primary flex items-center gap-2">
           <span>📸</span> 全局贴士
         </h3>
@@ -299,36 +270,12 @@ function PhotoWeekView({ plan }: { plan: PhotoWeekPlan }) {
 }
 
 export function PlanResultView({
-  plan,
-  stages = [],
-  stageStatuses = {},
-  logs = [],
-  loading = false
+  plan
 }: {
-  plan: PlanResult | null;
-  stages?: PlanExecutionStage[];
-  stageStatuses?: Record<string, PlanExecutionStageStatus>;
-  logs?: PlanExecutionLogEntry[];
-  loading?: boolean;
+  plan: PlanResult;
 }) {
-  if (!plan) {
-    return (
-      <div className="space-y-12">
-        <ExecutionPanel stages={stages} stageStatuses={stageStatuses} logs={logs} loading={loading} />
-        {!loading && stages.length === 0 && logs.length === 0 && (
-          <div className="h-[600px] flex flex-col items-center justify-center p-12 text-center rounded-2xl bg-surface/5 border border-solid border-white/5 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.1)] transition-all hover:bg-surface/10">
-            <div className="text-6xl mb-8 opacity-70 animate-pulse drop-shadow-[0_0_15px_rgba(255,255,255,0.3)]">✨</div>
-            <div className="text-sm font-bold text-primary uppercase tracking-widest mb-3 tracking-[0.2em]">选择场景并生成规划</div>
-            <div className="text-[10px] text-tertiary tracking-[0.1em] uppercase font-bold">此区域将展示你的专属内容</div>
-          </div>
-        )}
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-12">
-      <ExecutionPanel stages={stages} stageStatuses={stageStatuses} logs={logs} loading={loading} />
+    <div className="space-y-12 animate-slide-up">
       {plan.type === "run_tomorrow" ? <RunPlanView plan={plan} /> : <PhotoWeekView plan={plan} />}
     </div>
   );

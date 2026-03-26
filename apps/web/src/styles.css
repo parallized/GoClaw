@@ -93,7 +93,7 @@ body {
   background-image: none;
   background-attachment: fixed;
   color: var(--color-primary);
-  font-family: Lyon-Text, Georgia, "Nimbus Roman No9 L", "Songti SC", "Noto Serif SC", "Source Han Serif SC", "Source Han Serif CN", STSong, "AR PL New Sung", "AR PL UMing CN", SimSun, "WenQuanYi Bitmap Song", "AR PL UKai CN", serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
   line-height: 1.6;
   letter-spacing: -0.01em;
   -webkit-font-smoothing: antialiased;
@@ -252,3 +252,10 @@ select {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-tertiary);
 }
+
+.n-tag-blue { background: var(--color-tag-blue-bg); color: var(--color-tag-blue-text); border: 1px solid rgba(54, 148, 242, 0.2); }
+.n-tag-green { background: var(--color-tag-green-bg); color: var(--color-tag-green-text); border: 1px solid rgba(68, 179, 165, 0.2); }
+.n-tag-pink { background: var(--color-tag-pink-bg); color: var(--color-tag-pink-text); border: 1px solid rgba(217, 87, 160, 0.2); }
+.n-tag-orange { background: var(--color-tag-orange-bg); color: var(--color-tag-orange-text); border: 1px solid rgba(242, 166, 94, 0.2); }
+.n-tag-indigo { background: var(--color-tag-indigo-bg); color: var(--color-tag-indigo-text); border: 1px solid rgba(123, 132, 249, 0.2); }
+.n-tag-error { background: var(--color-error-bg); color: var(--color-error-text); border: 1px solid var(--color-error-border); }
