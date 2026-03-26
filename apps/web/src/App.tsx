@@ -215,7 +215,7 @@ export function App() {
                 }}
               >
                 {/* 全局统一的左上角悬浮操作栏 */}
-                {step !== "scenario" && (
+                {isCurrent && step !== "scenario" && (
                   <div className="absolute top-6 left-4 md:-left-16 z-50 flex flex-col gap-3 pointer-events-auto">
                     <button
                       type="button"
@@ -266,9 +266,15 @@ export function App() {
                           </h2>
                           <div className="grid gap-6 sm:grid-cols-2" role="listbox" aria-label="场景列表">
                             {scenarios.map((s) => (
-                              <div key={s.id} onClick={() => { setScenarioId(s.id); setAppStep("form"); }}>
-                                <ScenarioCard scenario={s} active={s.id === scenarioId} onSelect={() => { }} />
-                              </div>
+                              <ScenarioCard
+                                key={s.id}
+                                scenario={s}
+                                active={s.id === scenarioId}
+                                onSelect={(nextScenarioId) => {
+                                  setScenarioId(nextScenarioId);
+                                  setAppStep("form");
+                                }}
+                              />
                             ))}
                           </div>
                         </section>

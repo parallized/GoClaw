@@ -226,19 +226,15 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   border-color: var(--color-tertiary);
 }
 
-.n-toggle[aria-pressed="true"] {
-  border-color: var(--color-accent-indigo);
-  background: var(--color-accent-indigo);
-  color: white;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
-}
-
-.n-toggle--pink[aria-pressed="true"] {
-  border-color: var(--color-accent-pink);
-  background: var(--color-accent-pink);
-  color: white;
-  box-shadow: 0 4px 12px rgba(236, 72, 153, 0.3);
-}
+.n-tag--green[aria-pressed="true"] { border-color: #10b981; background: #10b981; color: white; }
+.n-tag--cyan[aria-pressed="true"] { border-color: #06b6d4; background: #06b6d4; color: white; }
+.n-tag--blue[aria-pressed="true"] { border-color: #3b82f6; background: #3b82f6; color: white; }
+.n-tag--purple[aria-pressed="true"] { border-color: #8b5cf6; background: #8b5cf6; color: white; }
+.n-tag--orange[aria-pressed="true"] { border-color: #f97316; background: #f97316; color: white; }
+.n-tag--amber[aria-pressed="true"] { border-color: #f59e0b; background: #f59e0b; color: white; }
+.n-tag--teal[aria-pressed="true"] { border-color: #14b8a6; background: #14b8a6; color: white; }
+.n-tag--indigo[aria-pressed="true"] { border-color: #6366f1; background: #6366f1; color: white; }
+.n-tag--rose[aria-pressed="true"] { border-color: #f43f5e; background: #f43f5e; color: white; }
 
 .n-scenario-card {
   width: 100%;

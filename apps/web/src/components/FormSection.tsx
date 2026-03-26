@@ -1,8 +1,32 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import AMapLoader from "@amap/amap-jsapi-loader";
 import { Icon } from "@iconify/react";
 import type { CameraSkill, PhotoTheme, RunTerrain, ScenarioId } from "@goclaw/contracts";
 import type { PhotoWeekRequest, RunPlanRequest } from "@goclaw/contracts";
+
+function getTagColorClass(value: string) {
+  switch (value) {
+    case "park":
+    case "shaded":
+    case "nature":
+      return "n-tag--green";
+    case "flat":
+    case "urban":
+      return "n-tag--cyan";
+    case "architecture":
+      return "n-tag--blue";
+    case "waterfront":
+      return "n-tag--teal";
+    case "humanity":
+      return "n-tag--purple";
+    case "track":
+      return "n-tag--orange";
+    case "night":
+      return "n-tag--amber";
+    default:
+      return "n-tag--indigo";
+  }
+}
 
 interface FormSectionProps {
   scenarioId: ScenarioId;
@@ -49,6 +73,17 @@ function toggleInArray<T extends string>(arr: T[] | undefined, value: T): T[] {
   return [...set];
 }
 
+function openTimeInput(input: HTMLInputElement | null) {
+  if (!input) {
+    return;
+  }
+
+  input.focus();
+  if (typeof input.showPicker === "function") {
+    input.showPicker();
+  }
+}
+
 /* ── Run preferences form components ── */
 
 export function RunPaceControl({ paceMinPerKm, onChange }: { paceMinPerKm: number; onChange: (val: number) => void }) {
@@ -75,72 +110,79 @@ export function RunPaceControl({ paceMinPerKm, onChange }: { paceMinPerKm: numbe
   );
 }
 
-export function RunDistanceControl({ min, max, onChange }: { min: number; max: number; onChange: (min: number, max: number) => void }) {
+export function RunDistanceControl({ max, onChange }: { max: number; onChange: (val: number) => void }) {
   return (
     <div className="absolute top-4 right-4 z-20 bg-surface/40 backdrop-blur-md p-3 rounded-xl border border-white/5 w-40 animate-in fade-in slide-in-from-right-4 duration-500 pointer-events-auto shadow-sm">
       <div className="flex items-center justify-between mb-2">
         <span className="text-[10px] font-bold text-tertiary uppercase tracking-widest">距离范围</span>
-        <span className="text-primary font-bold text-xs">
-          {min} - {max} km
-        </span>
+        <span className="text-primary font-bold text-xs">{max} km</span>
       </div>
       <div className="relative w-full h-4 pt-1">
         <div className="absolute w-full h-1 bg-white/10 rounded-full top-1"></div>
-        <div
-          className="absolute h-1 bg-accent-blue rounded-full top-1 z-10"
-          style={{
-            left: `${(min - 1) / (21 - 1) * 100}%`,
-            width: `${(max - min) / (21 - 1) * 100}%`
-          }}
-        ></div>
         <input
-          type="range" min="1" max="21" step="0.5" value={min}
-          onChange={(e) => onChange(Math.min(Number(e.target.value), max - 0.5), max)}
-          className="range-input absolute w-full h-1 appearance-none bg-transparent pointer-events-auto z-30 top-1"
+          className="absolute w-full h-1 appearance-none bg-transparent cursor-pointer z-10 top-1"
           style={{ accentColor: "var(--color-accent-blue)" }}
+          type="range" min="0.5" max="21" step="0.1" value={max}
+          onChange={(e) => onChange(Number(e.target.value))}
         />
-        <input
-          type="range" min="1" max="21" step="0.5" value={max}
-          onChange={(e) => onChange(min, Math.max(Number(e.target.value), min + 0.5))}
-          className="range-input absolute w-full h-1 appearance-none bg-transparent pointer-events-auto z-40 top-1"
-          style={{ accentColor: "var(--color-accent-blue)" }}
-        />
-      </div>
-      <div className="flex justify-between w-full px-1 text-[8px] text-tertiary font-bold tracking-tighter mt-1 opacity-50">
-        <span>日常</span>
-        <span>中距离</span>
-        <span>半马</span>
       </div>
     </div>
   );
 }
 
 export function TimeWindowControl({ from, to, onChange }: { from: string; to: string; onChange: (from: string, to: string) => void }) {
+  const fromId = useId();
+  const toId = useId();
+  const fromInputRef = useRef<HTMLInputElement>(null);
+  const toInputRef = useRef<HTMLInputElement>(null);
+
   return (
     <div className="flex items-center gap-0 bg-surface/20 rounded-xl overflow-hidden border border-white/10 shadow-sm group-focus-within:border-accent-green/50 transition-all">
-      <div className="flex-1 flex items-center relative gap-3 px-4 py-2 hover:bg-white/5 transition-colors">
+      <label
+        htmlFor={fromId}
+        className="flex-1 flex items-center relative gap-3 px-4 py-2 hover:bg-white/5 transition-colors cursor-pointer"
+        onClick={(event) => {
+          if (event.target !== fromInputRef.current) {
+            openTimeInput(fromInputRef.current);
+          }
+        }}
+      >
         <span className="text-[11px] font-bold text-tertiary uppercase shrink-0">从</span>
         <Icon icon="lucide:clock-9" className="text-tertiary text-lg shrink-0" />
         <input
+          id={fromId}
+          ref={fromInputRef}
+          aria-label="开始时间"
           className="w-full bg-transparent border-none p-0 text-primary text-sm font-bold focus:outline-none appearance-none cursor-pointer"
           type="time"
           value={from}
           onChange={(e) => onChange(e.target.value, to)}
         />
-      </div>
+      </label>
       <div className="text-tertiary opacity-30 flex items-center px-1">
         <div className="w-3 h-px bg-current"></div>
       </div>
-      <div className="flex-1 flex items-center relative gap-3 px-4 py-2 hover:bg-white/5 transition-colors">
+      <label
+        htmlFor={toId}
+        className="flex-1 flex items-center relative gap-3 px-4 py-2 hover:bg-white/5 transition-colors cursor-pointer"
+        onClick={(event) => {
+          if (event.target !== toInputRef.current) {
+            openTimeInput(toInputRef.current);
+          }
+        }}
+      >
         <span className="text-[11px] font-bold text-tertiary uppercase shrink-0">至</span>
         <Icon icon="lucide:clock-3" className="text-tertiary text-lg shrink-0" />
         <input
+          id={toId}
+          ref={toInputRef}
+          aria-label="结束时间"
           className="w-full bg-transparent border-none p-0 text-primary text-sm font-bold focus:outline-none appearance-none cursor-pointer"
           type="time"
           value={to}
           onChange={(e) => onChange(from, e.target.value)}
         />
-      </div>
+      </label>
     </div>
   );
 }
@@ -152,7 +194,8 @@ export function TerrainControl({ selected, onChange }: { selected: string[]; onC
         <button
           key={t.value}
           type="button"
-          className={`n-toggle px-3 py-1.5 flex items-center gap-2 text-xs font-bold transition-all rounded-full ${selected?.includes(t.value) ? "bg-accent-green text-white shadow-lg" : "bg-surface/20 text-secondary border-white/5 hover:bg-surface/40 hover:text-primary"}`}
+          aria-pressed={selected?.includes(t.value)}
+          className={`n-toggle ${getTagColorClass(t.value)} px-3 py-1.5 flex items-center gap-2 text-xs font-bold transition-all rounded-full`}
           onClick={() => onChange(toggleInArray(selected, t.value))}
         >
           <Icon icon={t.icon} className="text-base opacity-90" />
@@ -213,7 +256,8 @@ export function PhotoThemesControl({ selected, onChange }: { selected: string[];
         <button
           key={t.value}
           type="button"
-          className={`n-toggle px-3 py-1.5 flex items-center gap-2 text-xs font-bold transition-all rounded-full ${selected?.includes(t.value) ? "bg-accent-pink text-white shadow-lg" : "bg-surface/20 text-secondary border-white/5 hover:bg-surface/40 hover:text-primary"}`}
+          aria-pressed={selected?.includes(t.value)}
+          className={`n-toggle ${getTagColorClass(t.value)} px-3 py-1.5 flex items-center gap-2 text-xs font-bold transition-all rounded-full`}
           onClick={() => onChange(toggleInArray(selected, t.value))}
         >
           <Icon icon={t.icon} className="text-base opacity-90" />
@@ -330,14 +374,9 @@ export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunCh
           {/* Scenario-specific Floating MAP Tools */}
           {scenarioId === "run_tomorrow" ? (
             <>
-              <RunPaceControl
-                paceMinPerKm={runForm.preferences?.paceMinPerKm ?? 6.5}
-                onChange={(val) => onRunChange({ ...runForm, preferences: { ...runForm.preferences, paceMinPerKm: val } })}
-              />
               <RunDistanceControl
-                min={runForm.preferences?.preferredDistanceKm?.min ?? 4}
                 max={runForm.preferences?.preferredDistanceKm?.max ?? 8}
-                onChange={(min, max) => onRunChange({ ...runForm, preferences: { ...runForm.preferences, preferredDistanceKm: { min, max } } })}
+                onChange={(val) => onRunChange({ ...runForm, preferences: { ...runForm.preferences, preferredDistanceKm: { min: 1, max: val } } })}
               />
             </>
           ) : (
@@ -357,12 +396,15 @@ export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunCh
                 {geoStatus === "detecting" ? "正在推算位置..." : (location.label || "观测区域已锁定")}
               </div>
               <div className="h-3 w-px bg-white/10"></div>
-              <div
+              <button
+                type="button"
+                aria-label="重新获取我的位置"
                 onClick={onRelocate}
-                className="text-[10px] font-bold text-tertiary hover:text-primary transition-colors disabled:opacity-30 uppercase tracking-tighter"
+                disabled={geoStatus === "detecting"}
+                className="bg-transparent border-0 p-0 text-[10px] font-bold text-tertiary hover:text-primary transition-colors disabled:opacity-30 disabled:cursor-not-allowed uppercase tracking-tighter cursor-pointer"
               >
                 {geoStatus === "detecting" ? <Icon icon="lucide:refresh-cw" className="animate-spin text-xs" /> : "我的位置"}
-              </div>
+              </button>
             </div>
           </div>
         </div>
