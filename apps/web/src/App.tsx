@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Icon } from "@iconify/react";
 import type {
   PhotoWeekRequest,
   PlanExecutionLogEntry,
@@ -10,7 +11,7 @@ import type {
   ScenarioManifest
 } from "@goclaw/contracts";
 import { PlanResultView, ExecutionPanel } from "./components/PlanResult";
-import { FormSection } from "./components/FormSection";
+import { FormSection, TimeWindowControl, TerrainControl, PhotoThemesControl, PhotoSkillControl } from "./components/FormSection";
 import { ScenarioCard } from "./components/ScenarioCard";
 import { fetchScenarios, streamPlan } from "./lib/api";
 import { defaultPhotoForm, defaultRunForm, defaultScenarioId } from "./lib/constants";
@@ -213,42 +214,38 @@ export function App() {
                   pointerEvents: isCurrent ? "auto" : "none",
                 }}
               >
+                {/* 全局统一的左上角悬浮操作栏 */}
+                {step !== "scenario" && (
+                  <div className="absolute top-6 left-4 md:-left-16 z-50 flex flex-col gap-3 pointer-events-auto">
+                    <button
+                      type="button"
+                      onClick={() => { abortControllerRef.current?.abort(); setAppStep("scenario"); }}
+                      className="w-10 h-10 rounded-full bg-surface/80 backdrop-blur-xl hover:bg-surface-hover border border-white/10 flex items-center justify-center text-tertiary hover:text-primary transition-all cursor-pointer shadow-sm"
+                      aria-label="放弃当前并返回大厅"
+                    >
+                      <Icon icon="lucide:x" className="text-[18px]" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const isCurrentlyDark = theme === "dark" || (theme === "auto" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+                        setTheme(isCurrentlyDark ? "light" : "dark");
+                      }}
+                      className="w-10 h-10 rounded-full bg-surface/80 backdrop-blur-xl hover:bg-surface-hover border border-white/10 flex items-center justify-center text-tertiary hover:text-primary transition-all cursor-pointer shadow-sm"
+                      aria-label="切换日夜模式"
+                    >
+                      {theme === "dark" || (theme === "auto" && window.matchMedia("(prefers-color-scheme: dark)").matches) ? (
+                        <Icon icon="lucide:sun-medium" className="text-[18px]" />
+                      ) : (
+                        <Icon icon="lucide:moon-star" className="text-[18px]" />
+                      )}
+                    </button>
+                  </div>
+                )}
                 <div className="relative shadow-[0_-16px_64px_rgba(0,0,0,0.3)] h-full flex flex-col w-full border-t border-l border-r border-b-0 border-white/5 bg-surface/80 backdrop-blur-3xl overflow-hidden rounded-t-lg md:rounded-t-xl rounded-b-none">
 
-                  {/* 全局统一的左上角悬浮操作栏 */}
-                  {step !== "scenario" && (
-                    <div className="absolute top-6 left-4 md:-left-16 z-50 flex flex-col gap-3 pointer-events-auto">
-                      <button
-                        type="button"
-                        onClick={() => { abortControllerRef.current?.abort(); setAppStep("scenario"); }}
-                        className="w-10 h-10 rounded-full bg-surface/80 backdrop-blur-xl hover:bg-surface-hover border border-white/10 flex items-center justify-center text-tertiary hover:text-primary transition-all cursor-pointer shadow-sm"
-                        aria-label="放弃当前并返回大厅"
-                      >
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <line x1="18" y1="6" x2="6" y2="18"></line>
-                          <line x1="6" y1="6" x2="18" y2="18"></line>
-                        </svg>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const isCurrentlyDark = theme === "dark" || (theme === "auto" && window.matchMedia("(prefers-color-scheme: dark)").matches);
-                          setTheme(isCurrentlyDark ? "light" : "dark");
-                        }}
-                        className="w-10 h-10 rounded-full bg-surface/80 backdrop-blur-xl hover:bg-surface-hover border border-white/10 flex items-center justify-center text-tertiary hover:text-primary transition-all cursor-pointer shadow-sm"
-                        aria-label="切换日夜模式"
-                      >
-                        {theme === "dark" || (theme === "auto" && window.matchMedia("(prefers-color-scheme: dark)").matches) ? (
-                          <span className="text-base leading-none">☀️</span>
-                        ) : (
-                          <span className="text-base leading-none">🌙</span>
-                        )}
-                      </button>
-                    </div>
-                  )}
-
-                  <div className={`flex-1 flex flex-col w-full h-full overflow-y-auto overflow-x-hidden p-6 sm:p-12 ${step !== "scenario" ? "pt-20 sm:pt-24" : ""}`}>
+                  <div className={`flex-1 flex flex-col w-full h-full overflow-y-auto overflow-x-hidden p-6 sm:p-12 ${step !== "scenario" ? "pt-12 sm:pt-16" : ""}`}>
                     {step === "scenario" && (
                       <div className="flex flex-col h-full animate-fade-in">
                         <header className="mb-14">
@@ -293,13 +290,44 @@ export function App() {
                             <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-primary leading-tight mb-2">
                               {scenarios.find(s => s.id === scenarioId)?.title || "高级规划设定"}
                             </h1>
-                            <p className="text-secondary text-sm leading-relaxed mb-4 max-w-2xl sm:mx-0 mx-auto">
-                              基于高德 3D 测绘与实时环境感知，为你的出行做出最优雅的路线推演算法预测。
+                            <p className="text-secondary text-[14px] leading-relaxed mb-4 max-w-2xl sm:mx-0 mx-auto">
+                              打算去哪跑步，或者只是走走？
                             </p>
 
-                            <button type="submit" disabled={loading} className="flex items-center justify-center sm:justify-start gap-2 px-6 py-2.5 text-sm font-bold bg-primary hover:opacity-90 rounded-lg transition-all shadow-md w-full sm:w-fit border border-transparent hover:border-edge shrink-0 mx-auto sm:mx-0" style={{ color: "var(--color-base-bg)" }}>
-                              {loading ? "实时推演中..." : "生成规划 ✨"}
-                            </button>
+                            <div className="flex flex-col sm:flex-row items-end sm:items-center gap-4 w-full">
+                              <button type="submit" disabled={loading} className="flex items-center justify-center gap-2 px-8 py-3 text-sm font-bold bg-primary hover:opacity-90 rounded-xl transition-all shadow-lg w-full sm:w-fit border border-transparent hover:scale-[1.02] active:scale-95 shrink-0" style={{ color: "var(--color-base-bg)" }}>
+                                {loading ? "正在推演..." : "生成规划 ✨"}
+                              </button>
+
+                              <div className="flex-1 w-full sm:w-auto animate-in fade-in slide-in-from-left-4 duration-700 delay-100">
+                                {scenarioId === "run_tomorrow" ? (
+                                  <TimeWindowControl
+                                    from={runForm.preferences?.startWindow?.from ?? "06:00"}
+                                    to={runForm.preferences?.startWindow?.to ?? "09:30"}
+                                    onChange={(from, to) => setRunForm({ ...runForm, preferences: { ...runForm.preferences, startWindow: { from, to } } })}
+                                  />
+                                ) : (
+                                  <PhotoSkillControl 
+                                    skill={photoForm.preferences?.cameraSkill ?? "beginner"} 
+                                    onChange={(val) => setPhotoForm({ ...photoForm, preferences: { ...photoForm.preferences, cameraSkill: val } })}
+                                  />
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="mt-4 flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200">
+                              {scenarioId === "run_tomorrow" ? (
+                                <TerrainControl
+                                  selected={runForm.preferences?.terrain ?? []}
+                                  onChange={(val) => setRunForm({ ...runForm, preferences: { ...runForm.preferences, terrain: val as any } })}
+                                />
+                              ) : (
+                                <PhotoThemesControl
+                                  selected={photoForm.preferences?.themes ?? []}
+                                  onChange={(val) => setPhotoForm({ ...photoForm, preferences: { ...photoForm.preferences, themes: val as any } })}
+                                />
+                              )}
+                            </div>
                           </div>
 
                           {/* Map Container Area */}

@@ -1,22 +1,26 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 :root {
   color-scheme: light dark;
   --color-base-bg: #ffffff;
-  --color-primary: #37352f;
-  --color-secondary: #6b7280;
-  --color-tertiary: #9ca3af;
-  
+  --color-primary: #1a1a1a;
+  --color-secondary: #666666;
+  --color-tertiary: #999999;
+
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
   --color-surface: rgba(255, 255, 255, 0.8);
   --color-surface-hover: rgba(243, 244, 246, 0.8);
   --color-surface-gray: #f7f6f3;
   --color-edge: rgba(55, 53, 47, 0.08);
   --color-edge-light: rgba(55, 53, 47, 0.04);
-  
+
   --color-accent-blue: #2383e2;
   --color-accent-orange: #d9730d;
   --color-accent-green: #0f7b6c;
   --color-accent-pink: #ad1a72;
   --color-accent-indigo: #525df3;
-  
+
   --color-tag-blue-bg: rgba(35, 131, 226, 0.1);
   --color-tag-blue-text: #2383e2;
   --color-tag-orange-bg: rgba(217, 115, 13, 0.1);
@@ -29,7 +33,7 @@
   --color-tag-gray-text: #37352f;
   --color-tag-indigo-bg: rgba(82, 93, 243, 0.1);
   --color-tag-indigo-text: #525df3;
-  
+
   --color-error-bg: #fff5f5;
   --color-error-border: #feb2b2;
   --color-error-text: #e53e3e;
@@ -129,9 +133,9 @@ body {
   background-image: none;
   background-attachment: fixed;
   color: var(--color-primary);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-  line-height: 1.6;
-  letter-spacing: -0.01em;
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  letter-spacing: -0.011em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -181,7 +185,8 @@ select {
 .n-input {
   width: 100%;
   border-radius: 0.375rem;
-  border: 1px solid rgba(255, 255, 255, 0.05); /* fixed border to look like glass edge */
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  /* fixed border to look like glass edge */
   background: var(--color-surface-gray);
   color: var(--color-primary);
   padding: 0.5rem 0.75rem;
@@ -198,6 +203,10 @@ select {
 .n-input:focus {
   border-color: var(--color-accent-blue);
   background: var(--color-base-bg);
+}
+
+input[type="time"]::-webkit-calendar-picker-indicator {
+  display: none;
 }
 
 .n-toggle {
@@ -278,20 +287,135 @@ select {
   width: 8px;
   height: 8px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
   background: var(--color-edge);
   border-radius: 4px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-tertiary);
 }
 
-.n-tag-blue { background: var(--color-tag-blue-bg); color: var(--color-tag-blue-text); border: 1px solid rgba(54, 148, 242, 0.2); }
-.n-tag-green { background: var(--color-tag-green-bg); color: var(--color-tag-green-text); border: 1px solid rgba(68, 179, 165, 0.2); }
-.n-tag-pink { background: var(--color-tag-pink-bg); color: var(--color-tag-pink-text); border: 1px solid rgba(217, 87, 160, 0.2); }
-.n-tag-orange { background: var(--color-tag-orange-bg); color: var(--color-tag-orange-text); border: 1px solid rgba(242, 166, 94, 0.2); }
-.n-tag-indigo { background: var(--color-tag-indigo-bg); color: var(--color-tag-indigo-text); border: 1px solid rgba(123, 132, 249, 0.2); }
-.n-tag-error { background: var(--color-error-bg); color: var(--color-error-text); border: 1px solid var(--color-error-border); }
+.n-tag-blue {
+  background: var(--color-tag-blue-bg);
+  color: var(--color-tag-blue-text);
+  border: 1px solid rgba(54, 148, 242, 0.2);
+}
+
+.n-tag-green {
+  background: var(--color-tag-green-bg);
+  color: var(--color-tag-green-text);
+  border: 1px solid rgba(68, 179, 165, 0.2);
+}
+
+.n-tag-pink {
+  background: var(--color-tag-pink-bg);
+  color: var(--color-tag-pink-text);
+  border: 1px solid rgba(217, 87, 160, 0.2);
+}
+
+.n-tag-orange {
+  background: var(--color-tag-orange-bg);
+  color: var(--color-tag-orange-text);
+  border: 1px solid rgba(242, 166, 94, 0.2);
+}
+
+.n-tag-indigo {
+  background: var(--color-tag-indigo-bg);
+  color: var(--color-tag-indigo-text);
+  border: 1px solid rgba(123, 132, 249, 0.2);
+}
+
+/* ── Toggle Switch ── */
+.n-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+
+.n-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.n-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--color-surface-gray);
+  transition: .4s;
+  border-radius: 24px;
+  border: 1px solid var(--color-edge);
+}
+
+.n-slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 2px;
+  bottom: 2px;
+  background-color: white;
+  transition: .4s;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+input:checked+.n-slider {
+  background-color: var(--color-accent-green);
+  border-color: var(--color-accent-green);
+}
+
+input:focus+.n-slider {
+  box-shadow: 0 0 1px var(--color-accent-green);
+}
+
+input:checked+.n-slider:before {
+  transform: translateX(20px);
+}
+
+/* ── Range Input ── */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 18px;
+  width: 18px;
+  background-color: white;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  margin-top: -6px;
+  /* (track_height/2) - (thumb_height/2) */
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.range-input::-webkit-slider-runnable-track {
+  background: transparent !important;
+}

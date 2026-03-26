@@ -49,176 +49,178 @@ function toggleInArray<T extends string>(arr: T[] | undefined, value: T): T[] {
   return [...set];
 }
 
-/* ── Location display (auto-detected) ── */
+/* ── Run preferences form components ── */
 
-interface LocationDisplayProps {
-  label: string | undefined;
-  latitude: number;
-  longitude: number;
-  geoStatus: "idle" | "detecting" | "done" | "failed";
-  onRelocate: () => void;
-}
-
-function LocationDisplay({ label, latitude, longitude, geoStatus, onRelocate }: LocationDisplayProps) {
+export function RunPaceControl({ paceMinPerKm, onChange }: { paceMinPerKm: number; onChange: (val: number) => void }) {
   return (
-    <fieldset className="mb-10 border-none p-0">
-      <legend className="mb-4 text-[10px] font-bold uppercase tracking-widest text-accent-blue flex items-center gap-2">
-        <span className="w-1.5 h-1.5 rounded-full bg-accent-blue shadow-[0_0_8px_rgba(35,131,226,0.6)]"></span> 位置信息
-      </legend>
-      <div className="flex flex-col gap-4 rounded-xl border border-white/5 p-5 bg-surface/30 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.12)] transition-all hover:bg-surface/40">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex flex-col gap-1.5 overflow-hidden">
-            <div className="font-bold text-lg text-primary leading-tight truncate">
-              {geoStatus === "detecting" ? "正在精准定位…" : (label || "默认位置")}
-            </div>
-            <div className="text-secondary tracking-wide text-sm font-bold uppercase opacity-70">
-              {latitude.toFixed(4)}°N, {longitude.toFixed(4)}°E
-            </div>
-          </div>
-          <button
-            type="button"
-            className="shrink-0 rounded-lg bg-surface/40 border border-white/10 text-primary py-2 px-3 sm:px-4 text-sm font-bold cursor-pointer transition-transform hover:scale-105 active:scale-95 hover:bg-surface/60 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 uppercase tracking-widest shadow-sm"
-            onClick={onRelocate}
-            disabled={geoStatus === "detecting"}
-          >
-            {geoStatus === "detecting" ? "定位中" : "重新定位"}
-          </button>
-        </div>
-        {geoStatus === "failed" && (
-          <div className="text-sm mt-1 flex items-center gap-2 text-error-text font-bold bg-error-bg/50 backdrop-blur-sm p-3 rounded-lg border border-error-border">
-            <span>⚠️</span> 定位失败，按默认位置呈现。
-          </div>
-        )}
+    <div className="absolute top-4 left-4 z-20 bg-surface/40 backdrop-blur-md p-3 rounded-xl border border-white/5 w-44 animate-in fade-in slide-in-from-left-4 duration-500 pointer-events-auto shadow-sm">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] font-bold text-tertiary uppercase tracking-widest">推荐配速</span>
+        <span className="text-primary font-bold text-xs">{paceMinPerKm} 分/km</span>
       </div>
-    </fieldset>
+      <div className="relative w-full h-4 pt-1">
+        <div className="absolute w-full h-1 bg-white/10 rounded-full top-1"></div>
+        <input
+          className="absolute w-full h-1 appearance-none bg-transparent cursor-pointer z-10 top-1"
+          style={{ accentColor: "var(--color-accent-green)" }}
+          type="range"
+          min="3.0"
+          max="10.0"
+          step="0.1"
+          value={paceMinPerKm}
+          onChange={(e) => onChange(Number(e.target.value))}
+        />
+      </div>
+    </div>
   );
 }
 
-/* ── Run preferences form ── */
-
-function RunPreferencesFields({ form, onChange }: { form: RunPlanRequest; onChange: (next: RunPlanRequest) => void }) {
-  const prefs = form.preferences;
-
-  const patch = (partial: Partial<NonNullable<RunPlanRequest["preferences"]>>) =>
-    onChange({ ...form, preferences: { ...prefs, ...partial } });
-
+export function RunDistanceControl({ min, max, onChange }: { min: number; max: number; onChange: (min: number, max: number) => void }) {
   return (
-    <fieldset className="border-none p-0 m-0">
-      <div className="grid gap-x-4 gap-y-6 grid-cols-2">
-        <label className="flex flex-col gap-2 overflow-hidden">
-          <span className="text-sm font-bold text-secondary uppercase tracking-wider whitespace-nowrap truncate">配速(分/km)</span>
-          <input className="n-input bg-surface/20 backdrop-blur-md border-white/10 hover:border-white/20 focus:bg-surface/40 focus:border-accent-green" type="number" step="0.1" value={prefs?.paceMinPerKm ?? 6.5} onChange={(e) => patch({ paceMinPerKm: Number(e.target.value) })} />
-        </label>
-        <label className="flex flex-col gap-2 overflow-hidden">
-          <span className="text-sm font-bold text-secondary uppercase tracking-wider whitespace-nowrap truncate">避开高 UV</span>
-          <select className="n-input bg-surface/20 backdrop-blur-md border-white/10 hover:border-white/20 focus:bg-surface/40 focus:border-accent-green" value={String(prefs?.avoidHighUv ?? true)} onChange={(e) => patch({ avoidHighUv: e.target.value === "true" })}>
-            <option value="true">是</option>
-            <option value="false">否</option>
-          </select>
-        </label>
-        <label className="flex flex-col gap-2 overflow-hidden">
-          <span className="text-sm font-bold text-secondary uppercase tracking-wider whitespace-nowrap truncate">最短距离(km)</span>
-          <input
-            className="n-input bg-surface/20 backdrop-blur-md border-white/10 hover:border-white/20 focus:bg-surface/40 focus:border-accent-green"
-            type="number"
-            step="0.5"
-            value={prefs?.preferredDistanceKm?.min ?? 4}
-            onChange={(e) => patch({ preferredDistanceKm: { min: Number(e.target.value), max: prefs?.preferredDistanceKm?.max ?? 8 } })}
-          />
-        </label>
-        <label className="flex flex-col gap-2 overflow-hidden">
-          <span className="text-sm font-bold text-secondary uppercase tracking-wider whitespace-nowrap truncate">最长距离(km)</span>
-          <input
-            className="n-input bg-surface/20 backdrop-blur-md border-white/10 hover:border-white/20 focus:bg-surface/40 focus:border-accent-green"
-            type="number"
-            step="0.5"
-            value={prefs?.preferredDistanceKm?.max ?? 8}
-            onChange={(e) => patch({ preferredDistanceKm: { min: prefs?.preferredDistanceKm?.min ?? 4, max: Number(e.target.value) } })}
-          />
-        </label>
-        <label className="flex flex-col gap-2 overflow-hidden">
-          <span className="text-sm font-bold text-secondary uppercase tracking-wider whitespace-nowrap truncate">最早出发</span>
-          <input className="n-input bg-surface/20 backdrop-blur-md border-white/10 hover:border-white/20 focus:bg-surface/40 focus:border-accent-green" type="time" value={prefs?.startWindow?.from ?? "06:00"} onChange={(e) => patch({ startWindow: { from: e.target.value, to: prefs?.startWindow?.to ?? "09:30" } })} />
-        </label>
-        <label className="flex flex-col gap-2 overflow-hidden">
-          <span className="text-sm font-bold text-secondary uppercase tracking-wider whitespace-nowrap truncate">最晚出发</span>
-          <input className="n-input bg-surface/20 backdrop-blur-md border-white/10 hover:border-white/20 focus:bg-surface/40 focus:border-accent-green" type="time" value={prefs?.startWindow?.to ?? "09:30"} onChange={(e) => patch({ startWindow: { from: prefs?.startWindow?.from ?? "06:00", to: e.target.value } })} />
-        </label>
+    <div className="absolute top-4 right-4 z-20 bg-surface/40 backdrop-blur-md p-3 rounded-xl border border-white/5 w-40 animate-in fade-in slide-in-from-right-4 duration-500 pointer-events-auto shadow-sm">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] font-bold text-tertiary uppercase tracking-widest">距离范围</span>
+        <span className="text-primary font-bold text-xs">
+          {min} - {max} km
+        </span>
       </div>
-
-      <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent my-8"></div>
-      <div>
-        <div className="text-secondary text-sm font-bold uppercase tracking-wider mb-5">偏好地形</div>
-        <div className="flex flex-wrap gap-2.5">
-          {runTerrains.map((t) => (
-            <button
-              key={t.value}
-              type="button"
-              className={`n-toggle px-4 py-2 flex items-center gap-2 text-sm font-bold transition-all backdrop-blur-md rounded-full ${prefs?.terrain?.includes(t.value) ? "bg-accent-green/20 text-accent-green border-accent-green/50 shadow-[0_0_12px_rgba(15,123,108,0.3)]" : "bg-surface/20 text-secondary border-white/10 hover:bg-surface/40 hover:text-primary"}`}
-              aria-pressed={prefs?.terrain?.includes(t.value) ?? false}
-              onClick={() => patch({ terrain: toggleInArray(prefs?.terrain, t.value) })}
-            >
-              <Icon icon={t.icon} className="text-lg opacity-80" />
-              {t.label}
-            </button>
-          ))}
-        </div>
+      <div className="relative w-full h-4 pt-1">
+        <div className="absolute w-full h-1 bg-white/10 rounded-full top-1"></div>
+        <div
+          className="absolute h-1 bg-accent-blue rounded-full top-1 z-10"
+          style={{
+            left: `${(min - 1) / (21 - 1) * 100}%`,
+            width: `${(max - min) / (21 - 1) * 100}%`
+          }}
+        ></div>
+        <input
+          type="range" min="1" max="21" step="0.5" value={min}
+          onChange={(e) => onChange(Math.min(Number(e.target.value), max - 0.5), max)}
+          className="range-input absolute w-full h-1 appearance-none bg-transparent pointer-events-auto z-30 top-1"
+          style={{ accentColor: "var(--color-accent-blue)" }}
+        />
+        <input
+          type="range" min="1" max="21" step="0.5" value={max}
+          onChange={(e) => onChange(min, Math.max(Number(e.target.value), min + 0.5))}
+          className="range-input absolute w-full h-1 appearance-none bg-transparent pointer-events-auto z-40 top-1"
+          style={{ accentColor: "var(--color-accent-blue)" }}
+        />
       </div>
-    </fieldset>
+      <div className="flex justify-between w-full px-1 text-[8px] text-tertiary font-bold tracking-tighter mt-1 opacity-50">
+        <span>日常</span>
+        <span>中距离</span>
+        <span>半马</span>
+      </div>
+    </div>
   );
 }
 
-/* ── Photo preferences form ── */
-
-function PhotoPreferencesFields({ form, onChange }: { form: PhotoWeekRequest; onChange: (next: PhotoWeekRequest) => void }) {
-  const prefs = form.preferences;
-
-  const patch = (partial: Partial<NonNullable<PhotoWeekRequest["preferences"]>>) =>
-    onChange({ ...form, preferences: { ...prefs, ...partial } });
-
+export function TimeWindowControl({ from, to, onChange }: { from: string; to: string; onChange: (from: string, to: string) => void }) {
   return (
-    <fieldset className="border-none p-0 m-0">
-      <div className="grid gap-x-6 gap-y-8 grid-cols-2">
-        <label className="flex flex-col gap-4 overflow-hidden col-span-2 sm:col-span-1">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-bold text-secondary uppercase tracking-wider truncate">活动半径</span>
-            <span className="text-primary font-mono font-bold text-sm bg-white/5 px-2 py-0.5 rounded shadow-sm border border-white/5">{prefs?.mobilityRadiusKm ?? 12} km</span>
-          </div>
-          <input className="w-full h-1.5 bg-surface/30 rounded-lg appearance-none cursor-pointer" style={{ accentColor: "var(--color-accent-pink)" }} type="range" min="1" max="50" step="1" value={prefs?.mobilityRadiusKm ?? 12} onChange={(e) => patch({ mobilityRadiusKm: Number(e.target.value) })} />
-        </label>
-        <label className="flex flex-col gap-4 overflow-hidden col-span-2 sm:col-span-1">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-bold text-secondary uppercase tracking-wider truncate">摄影水平</span>
-            <span className="text-primary font-mono font-bold text-sm bg-white/5 px-2 py-0.5 rounded shadow-sm border border-white/5">{cameraSkills.find(s => s.value === (prefs?.cameraSkill ?? "beginner"))?.label}</span>
-          </div>
-          <input className="w-full h-1.5 bg-surface/30 rounded-lg appearance-none cursor-pointer" style={{ accentColor: "var(--color-accent-pink)" }} type="range" min="0" max="2" step="1" value={cameraSkills.findIndex(s => s.value === (prefs?.cameraSkill ?? "beginner"))} onChange={(e) => patch({ cameraSkill: cameraSkills[Number(e.target.value)]?.value as CameraSkill || "beginner" })} />
-          <div className="flex justify-between w-full px-1 text-[11px] text-tertiary font-bold tracking-widest mt-1">
-            <span>新手</span>
-            <span>进阶</span>
-            <span>高级</span>
-          </div>
-        </label>
+    <div className="flex items-center gap-0 bg-surface/20 rounded-xl overflow-hidden border border-white/10 shadow-sm group-focus-within:border-accent-green/50 transition-all">
+      <div className="flex-1 flex items-center relative gap-3 px-4 py-2 hover:bg-white/5 transition-colors">
+        <span className="text-[11px] font-bold text-tertiary uppercase shrink-0">从</span>
+        <Icon icon="lucide:clock-9" className="text-tertiary text-lg shrink-0" />
+        <input
+          className="w-full bg-transparent border-none p-0 text-primary text-sm font-bold focus:outline-none appearance-none cursor-pointer"
+          type="time"
+          value={from}
+          onChange={(e) => onChange(e.target.value, to)}
+        />
       </div>
+      <div className="text-tertiary opacity-30 flex items-center px-1">
+        <div className="w-3 h-px bg-current"></div>
+      </div>
+      <div className="flex-1 flex items-center relative gap-3 px-4 py-2 hover:bg-white/5 transition-colors">
+        <span className="text-[11px] font-bold text-tertiary uppercase shrink-0">至</span>
+        <Icon icon="lucide:clock-3" className="text-tertiary text-lg shrink-0" />
+        <input
+          className="w-full bg-transparent border-none p-0 text-primary text-sm font-bold focus:outline-none appearance-none cursor-pointer"
+          type="time"
+          value={to}
+          onChange={(e) => onChange(from, e.target.value)}
+        />
+      </div>
+    </div>
+  );
+}
 
-      <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent my-8"></div>
-      <div>
-        <div className="text-secondary text-sm font-bold uppercase tracking-wider mb-5">偏好题材</div>
-        <div className="flex flex-wrap gap-2.5">
-          {photoThemes.map((t) => (
-            <button
-              key={t.value}
-              type="button"
-              className={`n-toggle px-4 py-2 flex items-center gap-2 text-sm font-bold transition-all backdrop-blur-md rounded-full ${prefs?.themes?.includes(t.value) ? "bg-accent-pink/20 text-accent-pink border-accent-pink/50 shadow-[0_0_12px_rgba(173,26,114,0.3)]" : "bg-surface/20 text-secondary border-white/10 hover:bg-surface/40 hover:text-primary"}`}
-              aria-pressed={prefs?.themes?.includes(t.value) ?? false}
-              onClick={() => patch({ themes: toggleInArray(prefs?.themes, t.value) })}
-            >
-              <Icon icon={t.icon} className="text-lg opacity-80" />
-              {t.label}
-            </button>
-          ))}
-        </div>
+export function TerrainControl({ selected, onChange }: { selected: string[]; onChange: (val: string[]) => void }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {runTerrains.map((t) => (
+        <button
+          key={t.value}
+          type="button"
+          className={`n-toggle px-3 py-1.5 flex items-center gap-2 text-xs font-bold transition-all rounded-full ${selected?.includes(t.value) ? "bg-accent-green text-white shadow-lg" : "bg-surface/20 text-secondary border-white/5 hover:bg-surface/40 hover:text-primary"}`}
+          onClick={() => onChange(toggleInArray(selected, t.value))}
+        >
+          <Icon icon={t.icon} className="text-base opacity-90" />
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ── Photo preferences form components ── */
+
+export function PhotoMobilityControl({ radius, onChange }: { radius: number; onChange: (val: number) => void }) {
+  return (
+    <div className="absolute top-4 right-4 z-20 bg-surface/40 backdrop-blur-md p-3 rounded-xl border border-white/5 w-60 animate-in fade-in slide-in-from-right-4 duration-500 pointer-events-auto shadow-sm">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[12px] text-tertiary uppercase tracking-widest">范围</span>
+        <span className="text-primary font-bold text-xs">{radius} 千米</span>
       </div>
-    </fieldset>
+      <div className="relative w-full h-4 pt-1">
+        <div className="absolute w-full h-1 bg-white/10 rounded-full top-1"></div>
+        <input
+          className="absolute w-full h-1 appearance-none bg-transparent cursor-pointer z-10 top-1"
+          style={{ accentColor: "var(--color-accent-pink)" }}
+          type="range" min="0.5" max="50" step="0.1" value={radius}
+          onChange={(e) => onChange(Number(e.target.value))}
+        />
+      </div>
+    </div>
+  );
+}
+
+export function PhotoSkillControl({ skill, onChange }: { skill: string; onChange: (val: CameraSkill) => void }) {
+  return (
+    <div className="flex items-center gap-0 bg-surface/20 rounded-xl overflow-hidden border border-white/10 shadow-sm transition-all h-12">
+      <div className="px-4 py-2 border-r border-white/5 flex flex-col justify-center">
+        <span className="text-[9px] font-bold text-tertiary uppercase tracking-tighter mb-0.5">摄影水平</span>
+        <span className="text-primary font-bold text-xs">{cameraSkills.find(s => s.value === skill)?.label}</span>
+      </div>
+      <div className="flex-1 relative px-4 flex items-center">
+        <div className="absolute w-[calc(100%-2rem)] h-1 bg-white/10 rounded-full"></div>
+        <input
+          className="relative w-full h-1 appearance-none bg-transparent cursor-pointer z-10"
+          style={{ accentColor: "var(--color-accent-pink)" }}
+          type="range" min="0" max="2" step="1"
+          value={cameraSkills.findIndex(s => s.value === skill)}
+          onChange={(e) => onChange(cameraSkills[Number(e.target.value)]?.value as CameraSkill)}
+        />
+      </div>
+    </div>
+  );
+}
+
+export function PhotoThemesControl({ selected, onChange }: { selected: string[]; onChange: (val: string[]) => void }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {photoThemes.map((t) => (
+        <button
+          key={t.value}
+          type="button"
+          className={`n-toggle px-3 py-1.5 flex items-center gap-2 text-xs font-bold transition-all rounded-full ${selected?.includes(t.value) ? "bg-accent-pink text-white shadow-lg" : "bg-surface/20 text-secondary border-white/5 hover:bg-surface/40 hover:text-primary"}`}
+          onClick={() => onChange(toggleInArray(selected, t.value))}
+        >
+          <Icon icon={t.icon} className="text-base opacity-90" />
+          {t.label}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -322,37 +324,45 @@ export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunCh
       {/* UI Overlay Layer */}
       <div className="relative z-10 flex flex-col h-full pointer-events-none">
 
-        {/* Floating Settings Panel */}
-        <div className="mt-auto pointer-events-auto w-full flex flex-col group/settings shadow-[0_-8px_32px_rgba(0,0,0,0.2)]">
-          <div className={`relative transition-all duration-300 ease-in-out overflow-hidden z-20 ${isExpanded ? "opacity-100 max-h-[1200px]" : "opacity-0 max-h-0"}`}>
-            <div className="p-6 sm:px-8 sm:py-6 bg-surface/80 backdrop-blur-3xl">
-              {scenarioId === "run_tomorrow"
-                ? <RunPreferencesFields form={runForm} onChange={onRunChange} />
-                : <PhotoPreferencesFields form={photoForm} onChange={onPhotoChange} />}
-            </div>
-          </div>
+        {/* UI Overlay Layer */}
+        <div className="relative z-10 flex flex-col h-full pointer-events-none p-4">
 
-          <div className="relative z-10 p-5 sm:px-8 sm:py-5 bg-surface/60 backdrop-blur-3xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 border-t border-white/10">
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 rounded-full bg-accent-indigo/10 flex items-center justify-center text-accent-indigo ring-1 ring-accent-indigo/20 shadow-inner shrink-0">
-                <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.242-4.243a8 8 0 1111.314 0z"/><path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+          {/* Scenario-specific Floating MAP Tools */}
+          {scenarioId === "run_tomorrow" ? (
+            <>
+              <RunPaceControl
+                paceMinPerKm={runForm.preferences?.paceMinPerKm ?? 6.5}
+                onChange={(val) => onRunChange({ ...runForm, preferences: { ...runForm.preferences, paceMinPerKm: val } })}
+              />
+              <RunDistanceControl
+                min={runForm.preferences?.preferredDistanceKm?.min ?? 4}
+                max={runForm.preferences?.preferredDistanceKm?.max ?? 8}
+                onChange={(min, max) => onRunChange({ ...runForm, preferences: { ...runForm.preferences, preferredDistanceKm: { min, max } } })}
+              />
+            </>
+          ) : (
+            <>
+              <PhotoMobilityControl
+                radius={photoForm.preferences?.mobilityRadiusKm ?? 12}
+                onChange={(val) => onPhotoChange({ ...photoForm, preferences: { ...photoForm.preferences, mobilityRadiusKm: val } })}
+              />
+            </>
+          )}
+
+          {/* Floating Location Badge */}
+          <div className="mt-auto pointer-events-auto flex items-center justify-center w-full">
+            <div className="bg-surface/80 backdrop-blur-lg px-4 py-2 rounded-full border border-white/10 shadow-lg flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className={`w-2 h-2 rounded-full ${geoStatus === "detecting" ? "bg-accent-indigo animate-pulse" : "bg-accent-green"}`}></div>
+              <div className="text-[11px] font-bold text-primary tracking-tight truncate max-w-[200px]">
+                {geoStatus === "detecting" ? "正在推算位置..." : (location.label || "观测区域已锁定")}
               </div>
-              <div className="flex flex-col gap-1.5">
-                <div className="font-semibold text-base text-primary tracking-tight">{geoStatus === "detecting" ? "正在精准感知环境…" : (location.label || "未知坐标区域")}</div>
-                <div className="flex items-center">
-                  <span className="text-tertiary text-[11px] uppercase tracking-widest font-mono bg-white/5 px-2 py-0.5 rounded border border-white/5 inline-block">
-                    {location.latitude.toFixed(4)}°N, {location.longitude.toFixed(4)}°E
-                  </span>
-                </div>
+              <div className="h-3 w-px bg-white/10"></div>
+              <div
+                onClick={onRelocate}
+                className="text-[10px] font-bold text-tertiary hover:text-primary transition-colors disabled:opacity-30 uppercase tracking-tighter"
+              >
+                {geoStatus === "detecting" ? <Icon icon="lucide:refresh-cw" className="animate-spin text-xs" /> : "我的位置"}
               </div>
-            </div>
-            <div className="flex gap-3 w-full sm:w-auto mt-2 sm:mt-0 items-center justify-end">
-              <button type="button" onClick={onRelocate} disabled={geoStatus === "detecting"} className="w-10 h-10 shrink-0 bg-surface/50 hover:bg-surface border border-white/5 rounded-full text-secondary hover:text-primary transition-all flex items-center justify-center shadow-sm" aria-label="重新定位" title="重新定位">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={geoStatus === "detecting" ? "animate-spin text-primary" : ""}><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-9.27l5.67-5.67"/></svg>
-              </button>
-              <button type="button" onClick={() => setIsExpanded(!isExpanded)} className="px-5 py-2.5 text-sm font-bold bg-primary hover:opacity-90 rounded-full transition-all shadow-md flex items-center justify-center gap-2 border border-transparent hover:scale-[1.02]" style={{ color: "var(--color-base-bg)" }}>
-                偏好 <Icon icon="lucide:chevron-up" className={`text-[1.2rem] transition-transform duration-300 ${isExpanded ? "rotate-180" : ""}`} />
-              </button>
             </div>
           </div>
         </div>
