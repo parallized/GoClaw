@@ -8,7 +8,9 @@
     "build": "bunx tsc -p tsconfig.json --noEmit && bunx vite build"
   },
   "dependencies": {
+    "@amap/amap-jsapi-loader": "^1.0.1",
     "@goclaw/contracts": "workspace:*",
+    "@iconify/react": "^6.0.2",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },

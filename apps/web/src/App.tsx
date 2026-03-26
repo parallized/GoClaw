@@ -46,12 +46,28 @@ export function App() {
   const [executionStages, setExecutionStages] = useState<PlanExecutionStage[]>([]);
   const [executionStageStatuses, setExecutionStageStatuses] = useState<Record<string, PlanExecutionStageStatus>>({});
   const [appStep, setAppStep] = useState<AppStep>("scenario");
+  const [theme, setTheme] = useState<"light" | "dark" | "auto">("auto");
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === "dark") {
+      root.classList.add("dark");
+      root.classList.remove("light");
+    } else if (theme === "light") {
+      root.classList.add("light");
+      root.classList.remove("dark");
+    } else {
+      root.classList.remove("dark", "light");
+    }
+  }, [theme]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [geoStatus, setGeoStatus] = useState<"idle" | "detecting" | "done" | "failed">("idle");
   const initializedRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const executionStageTitleRef = useRef<Record<string, string>>({});
+
+  const isDark = theme === "dark" || (theme === "auto" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
 
   function applyLocation(loc: { latitude: number; longitude: number; label?: string }, tz: string) {
     setRunForm((prev) => ({ ...prev, location: loc, timezone: tz }));
@@ -197,21 +213,39 @@ export function App() {
                   pointerEvents: isCurrent ? "auto" : "none",
                 }}
               >
-                <div className="relative shadow-[0_-16px_64px_rgba(0,0,0,0.3)] h-full flex flex-col w-full border-t border-l border-r border-b-0 border-white/5 bg-surface/80 backdrop-blur-3xl overflow-hidden rounded-t-2xl md:rounded-t-3xl rounded-b-none">
+                <div className="relative shadow-[0_-16px_64px_rgba(0,0,0,0.3)] h-full flex flex-col w-full border-t border-l border-r border-b-0 border-white/5 bg-surface/80 backdrop-blur-3xl overflow-hidden rounded-t-lg md:rounded-t-xl rounded-b-none">
 
-                  {/* 全局统一的左上角悬浮返回按钮 */}
+                  {/* 全局统一的左上角悬浮操作栏 */}
                   {step !== "scenario" && (
-                    <button
-                      type="button"
-                      onClick={() => { abortControllerRef.current?.abort(); setAppStep("scenario"); }}
-                      className="absolute top-6 left-6 w-10 h-10 rounded-full bg-surface-gray hover:bg-surface-hover border border-white/5 flex items-center justify-center text-tertiary hover:text-primary transition-all cursor-pointer shadow-sm z-50 pointer-events-auto"
-                      aria-label="放弃当前并返回大厅"
-                    >
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <line x1="18" y1="6" x2="6" y2="18"></line>
-                        <line x1="6" y1="6" x2="18" y2="18"></line>
-                      </svg>
-                    </button>
+                    <div className="absolute top-6 left-4 md:-left-16 z-50 flex flex-col gap-3 pointer-events-auto">
+                      <button
+                        type="button"
+                        onClick={() => { abortControllerRef.current?.abort(); setAppStep("scenario"); }}
+                        className="w-10 h-10 rounded-full bg-surface/80 backdrop-blur-xl hover:bg-surface-hover border border-white/10 flex items-center justify-center text-tertiary hover:text-primary transition-all cursor-pointer shadow-sm"
+                        aria-label="放弃当前并返回大厅"
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <line x1="18" y1="6" x2="6" y2="18"></line>
+                          <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const isCurrentlyDark = theme === "dark" || (theme === "auto" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+                          setTheme(isCurrentlyDark ? "light" : "dark");
+                        }}
+                        className="w-10 h-10 rounded-full bg-surface/80 backdrop-blur-xl hover:bg-surface-hover border border-white/10 flex items-center justify-center text-tertiary hover:text-primary transition-all cursor-pointer shadow-sm"
+                        aria-label="切换日夜模式"
+                      >
+                        {theme === "dark" || (theme === "auto" && window.matchMedia("(prefers-color-scheme: dark)").matches) ? (
+                          <span className="text-base leading-none">☀️</span>
+                        ) : (
+                          <span className="text-base leading-none">🌙</span>
+                        )}
+                      </button>
+                    </div>
                   )}
 
                   <div className={`flex-1 flex flex-col w-full h-full overflow-y-auto overflow-x-hidden p-6 sm:p-12 ${step !== "scenario" ? "pt-20 sm:pt-24" : ""}`}>
@@ -250,24 +284,38 @@ export function App() {
                           e.preventDefault();
                           void handleSubmit();
                         }}
-                        className="flex flex-col flex-1 h-full animate-fade-in"
+                        className="flex flex-col flex-1 h-full animate-fade-in relative pt-8 sm:pt-12"
                       >
-                        <div className="flex-1">
-                          <FormSection
-                            scenarioId={scenarioId}
-                            runForm={runForm}
-                            photoForm={photoForm}
-                            onRunChange={setRunForm}
-                            onPhotoChange={setPhotoForm}
-                            geoStatus={geoStatus}
-                            onRelocate={handleDetectLocation}
-                          />
-                        </div>
+                        <div className="flex flex-col h-full w-full max-w-5xl mx-auto px-4 sm:px-6">
 
-                        <div className="pt-8 border-t border-white/5 mt-12">
-                          <button type="submit" disabled={loading} className="n-btn-submit flex items-center justify-center gap-2 w-full py-4 text-lg shadow-[0_8px_24px_rgba(82,93,243,0.3)] hover:shadow-[0_12px_32px_rgba(82,93,243,0.5)] transition-all">
-                            {loading ? "准备中..." : "生成规划 (✨ AI)"}
-                          </button>
+                          {/* Header Area */}
+                          <div className="w-full flex flex-col mb-4 z-10 shrink-0 text-center sm:text-left">
+                            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-primary leading-tight mb-2">
+                              {scenarios.find(s => s.id === scenarioId)?.title || "高级规划设定"}
+                            </h1>
+                            <p className="text-secondary text-sm leading-relaxed mb-4 max-w-2xl sm:mx-0 mx-auto">
+                              基于高德 3D 测绘与实时环境感知，为你的出行做出最优雅的路线推演算法预测。
+                            </p>
+
+                            <button type="submit" disabled={loading} className="flex items-center justify-center sm:justify-start gap-2 px-6 py-2.5 text-sm font-bold bg-primary hover:opacity-90 rounded-lg transition-all shadow-md w-full sm:w-fit border border-transparent hover:border-edge shrink-0 mx-auto sm:mx-0" style={{ color: "var(--color-base-bg)" }}>
+                              {loading ? "实时推演中..." : "生成规划 ✨"}
+                            </button>
+                          </div>
+
+                          {/* Map Container Area */}
+                          <div className="flex-1 w-full min-h-[500px] h-full relative z-0 mb-6 sm:mb-8">
+                            <FormSection
+                              scenarioId={scenarioId}
+                              themeMode={isDark ? "dark" : "light"}
+                              runForm={runForm}
+                              photoForm={photoForm}
+                              onRunChange={setRunForm}
+                              onPhotoChange={setPhotoForm}
+                              geoStatus={geoStatus}
+                              onRelocate={handleDetectLocation}
+                            />
+                          </div>
+
                         </div>
                       </form>
                     )}
