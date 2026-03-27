@@ -21,7 +21,7 @@ export const defaultRunForm: RunPlanRequest = {
     avoidHighUv: true,
     startWindow: {
       from: "06:00",
-      to: "09:30"
+      to: "10:00"
     }
   }
 };

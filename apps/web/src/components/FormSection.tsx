@@ -28,6 +28,30 @@ function getTagColorClass(value: string) {
   }
 }
 
+export function getTagColorHex(value: string) {
+  switch (value) {
+    case "park":
+    case "shaded":
+    case "nature":
+      return "#3a5a40"; // deep sage
+    case "flat":
+    case "urban":
+      return "#64748b"; // slate
+    case "architecture":
+      return "#475569"; // steel blue
+    case "waterfront":
+      return "#37523d"; // forest
+    case "humanity":
+      return "#4338ca"; // regal indigo
+    case "track":
+      return "#92400e"; // muted bronze
+    case "night":
+      return "#818cf8"; // soft indigo
+    default:
+      return "#64748b"; // slate
+  }
+}
+
 interface FormSectionProps {
   scenarioId: ScenarioId;
   themeMode: "light" | "dark";
@@ -74,13 +98,11 @@ function toggleInArray<T extends string>(arr: T[] | undefined, value: T): T[] {
 }
 
 function openTimeInput(input: HTMLInputElement | null) {
-  if (!input) {
-    return;
-  }
-
-  input.focus();
-  if (typeof input.showPicker === "function") {
+  if (!input) return;
+  try {
     input.showPicker();
+  } catch (err) {
+    input.focus();
   }
 }
 
@@ -130,59 +152,53 @@ export function RunDistanceControl({ max, onChange }: { max: number; onChange: (
   );
 }
 
-export function TimeWindowControl({ from, to, onChange }: { from: string; to: string; onChange: (from: string, to: string) => void }) {
-  const fromId = useId();
-  const toId = useId();
-  const fromInputRef = useRef<HTMLInputElement>(null);
-  const toInputRef = useRef<HTMLInputElement>(null);
+function timeStrToHour(s: string) {
+  const part = s.split(":")[0];
+  return part ? parseInt(part) : 0;
+}
+function hourToTimeStr(h: number) {
+  return `${h.toString().padStart(2, "0")}:00`;
+}
+
+export function TimeWindowControl({ from, to, onChange, colors }: { from: string; to: string; onChange: (from: string, to: string) => void, colors?: string[] }) {
+  const fH = timeStrToHour(from);
+  const tH = timeStrToHour(to);
+
+  const gradient = colors && colors.length > 0
+    ? (colors.length === 1
+        ? colors[0]
+        : `linear-gradient(to right, ${colors.join(", ")})`)
+    : "var(--color-accent-green)";
 
   return (
-    <div className="flex items-center gap-0 bg-surface/20 rounded-xl overflow-hidden border border-white/10 shadow-sm group-focus-within:border-accent-green/50 transition-all">
-      <label
-        htmlFor={fromId}
-        className="flex-1 flex items-center relative gap-3 px-4 py-2 hover:bg-white/5 transition-colors cursor-pointer"
-        onClick={(event) => {
-          if (event.target !== fromInputRef.current) {
-            openTimeInput(fromInputRef.current);
-          }
-        }}
-      >
-        <span className="text-[11px] font-bold text-tertiary uppercase shrink-0">从</span>
-        <Icon icon="lucide:clock-9" className="text-tertiary text-lg shrink-0" />
-        <input
-          id={fromId}
-          ref={fromInputRef}
-          aria-label="开始时间"
-          className="w-full bg-transparent border-none p-0 text-primary text-sm font-bold focus:outline-none appearance-none cursor-pointer"
-          type="time"
-          value={from}
-          onChange={(e) => onChange(e.target.value, to)}
-        />
-      </label>
-      <div className="text-tertiary opacity-30 flex items-center px-1">
-        <div className="w-3 h-px bg-current"></div>
+    <div className="flex flex-col bg-surface/20 rounded-xl px-4 py-2 border border-white/10 shadow-sm min-w-[200px]">
+      <div className="flex justify-between items-center mb-1">
+        <span className="text-[12px] text-tertiary uppercase tracking-widest">时间安排</span>
+        <span className="text-primary text-[12px]">{timeStrToHour(from)} 点出发，{timeStrToHour(to)} 点回来</span>
       </div>
-      <label
-        htmlFor={toId}
-        className="flex-1 flex items-center relative gap-3 px-4 py-2 hover:bg-white/5 transition-colors cursor-pointer"
-        onClick={(event) => {
-          if (event.target !== toInputRef.current) {
-            openTimeInput(toInputRef.current);
-          }
-        }}
-      >
-        <span className="text-[11px] font-bold text-tertiary uppercase shrink-0">至</span>
-        <Icon icon="lucide:clock-3" className="text-tertiary text-lg shrink-0" />
+      <div className="relative w-full h-4 pt-1">
+        <div className="absolute w-full h-1 bg-white/10 rounded-full top-1"></div>
+        <div
+          className="absolute h-1 rounded-full top-1 z-10 transition-all duration-300"
+          style={{
+            left: `${(fH / 24) * 100}%`,
+            width: `${((tH - fH) / 24) * 100}%`,
+            background: gradient
+          }}
+        ></div>
         <input
-          id={toId}
-          ref={toInputRef}
-          aria-label="结束时间"
-          className="w-full bg-transparent border-none p-0 text-primary text-sm font-bold focus:outline-none appearance-none cursor-pointer"
-          type="time"
-          value={to}
-          onChange={(e) => onChange(from, e.target.value)}
+          type="range" min="0" max="24" step="1" value={fH}
+          onChange={(e) => onChange(hourToTimeStr(Math.min(Number(e.target.value), tH - 1)), to)}
+          className="range-input absolute w-full h-1 appearance-none bg-transparent pointer-events-auto z-30 top-1"
+          style={{ accentColor: "white" }}
         />
-      </label>
+        <input
+          type="range" min="0" max="24" step="1" value={tH}
+          onChange={(e) => onChange(from, hourToTimeStr(Math.max(Number(e.target.value), fH + 1)))}
+          className="range-input absolute w-full h-1 appearance-none bg-transparent pointer-events-auto z-40 top-1"
+          style={{ accentColor: "white" }}
+        />
+      </div>
     </div>
   );
 }

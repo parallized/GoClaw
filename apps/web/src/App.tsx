@@ -11,7 +11,7 @@ import type {
   ScenarioManifest
 } from "@goclaw/contracts";
 import { PlanResultView, ExecutionPanel } from "./components/PlanResult";
-import { FormSection, TimeWindowControl, TerrainControl, PhotoThemesControl, PhotoSkillControl } from "./components/FormSection";
+import { FormSection, TimeWindowControl, TerrainControl, PhotoThemesControl, PhotoSkillControl, getTagColorHex } from "./components/FormSection";
 import { ScenarioCard } from "./components/ScenarioCard";
 import { fetchScenarios, streamPlan } from "./lib/api";
 import { defaultPhotoForm, defaultRunForm, defaultScenarioId } from "./lib/constants";
@@ -249,11 +249,8 @@ export function App() {
                     {step === "scenario" && (
                       <div className="flex flex-col h-full animate-fade-in">
                         <header className="mb-14">
-                          <div className="inline-flex items-center gap-2 px-0 py-1 text-accent-indigo text-sm font-bold tracking-widest uppercase mb-4 border-none">
-                            <span className="w-1.5 h-1.5 rounded-full bg-accent-indigo shadow-[0_0_8px_rgba(82,93,243,0.6)]"></span>
-                            智能活动规划
-                          </div>
-                          <h1 className="text-4xl sm:text-5xl font-bold leading-tight tracking-tight text-primary mb-4">
+                          <h1 className="text-4xl sm:text-5xl font-bold leading-tight tracking-tight text-primary mb-4 flex items-center gap-3">
+                            <Icon icon="mingcute:search-3-line" className="text-accent-indigo text-4xl sm:text-5xl" />
                             GoClaw
                           </h1>
                           <p className="text-secondary text-base sm:text-lg leading-relaxed max-w-xl mb-0">
@@ -297,24 +294,25 @@ export function App() {
                               {scenarios.find(s => s.id === scenarioId)?.title || "高级规划设定"}
                             </h1>
                             <p className="text-secondary text-[14px] leading-relaxed mb-4 max-w-2xl sm:mx-0 mx-auto">
-                              打算去哪跑步，或者只是走走？
+                              打算去哪，或者只是走走？
                             </p>
 
                             <div className="flex flex-col sm:flex-row items-end sm:items-center gap-4 w-full">
                               <button type="submit" disabled={loading} className="flex items-center justify-center gap-2 px-8 py-3 text-sm font-bold bg-primary hover:opacity-90 rounded-xl transition-all shadow-lg w-full sm:w-fit border border-transparent hover:scale-[1.02] active:scale-95 shrink-0" style={{ color: "var(--color-base-bg)" }}>
-                                {loading ? "正在推演..." : "生成规划 ✨"}
+                                {loading ? "正在推演..." : "生成规划"}
                               </button>
 
                               <div className="flex-1 w-full sm:w-auto animate-in fade-in slide-in-from-left-4 duration-700 delay-100">
                                 {scenarioId === "run_tomorrow" ? (
                                   <TimeWindowControl
                                     from={runForm.preferences?.startWindow?.from ?? "06:00"}
-                                    to={runForm.preferences?.startWindow?.to ?? "09:30"}
-                                    onChange={(from, to) => setRunForm({ ...runForm, preferences: { ...runForm.preferences, startWindow: { from, to } } })}
+                                    to={runForm.preferences?.startWindow?.to ?? "10:00"}
+                                    colors={runForm.preferences?.terrain?.map(getTagColorHex) ?? []}
+                                    onChange={(from, to) => setRunForm({ ...runForm, preferences: { ...runForm.preferences!, startWindow: { from, to } } })}
                                   />
                                 ) : (
-                                  <PhotoSkillControl 
-                                    skill={photoForm.preferences?.cameraSkill ?? "beginner"} 
+                                  <PhotoSkillControl
+                                    skill={photoForm.preferences?.cameraSkill ?? "beginner"}
                                     onChange={(val) => setPhotoForm({ ...photoForm, preferences: { ...photoForm.preferences, cameraSkill: val } })}
                                   />
                                 )}
