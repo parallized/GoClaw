@@ -11,6 +11,7 @@
     "@amap/amap-jsapi-loader": "^1.0.1",
     "@goclaw/contracts": "workspace:*",
     "@iconify/react": "^6.0.2",
+    "framer-motion": "^12.38.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },

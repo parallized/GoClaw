@@ -116,7 +116,7 @@ export function RunPaceControl({ paceMinPerKm, onChange }: { paceMinPerKm: numbe
         <span className="text-primary font-bold text-xs">{paceMinPerKm} 分/km</span>
       </div>
       <div className="relative w-full h-4 pt-1">
-        <div className="absolute w-full h-1 bg-white/10 rounded-full top-1"></div>
+        <div className="absolute w-full h-1 bg-black/20 dark:bg-white/10 rounded-full top-1"></div>
         <input
           className="absolute w-full h-1 appearance-none bg-transparent cursor-pointer z-10 top-1"
           style={{ accentColor: "var(--color-accent-green)" }}
@@ -140,7 +140,7 @@ export function RunDistanceControl({ max, onChange }: { max: number; onChange: (
         <span className="text-primary font-bold text-xs">{max} km</span>
       </div>
       <div className="relative w-full h-4 pt-1">
-        <div className="absolute w-full h-1 bg-white/10 rounded-full top-1"></div>
+        <div className="absolute w-full h-1 bg-black/20 dark:bg-white/10 rounded-full top-1"></div>
         <input
           className="absolute w-full h-1 appearance-none bg-transparent cursor-pointer z-10 top-1"
           style={{ accentColor: "var(--color-accent-blue)" }}
@@ -177,7 +177,7 @@ export function TimeWindowControl({ from, to, onChange, colors }: { from: string
         <span className="text-primary text-[12px]">{timeStrToHour(from)} 点出发，{timeStrToHour(to)} 点回来</span>
       </div>
       <div className="relative w-full h-4 pt-1">
-        <div className="absolute w-full h-1 bg-white/10 rounded-full top-1"></div>
+        <div className="absolute w-full h-1 bg-black/20 dark:bg-white/10 rounded-full top-1"></div>
         <div
           className="absolute h-1 rounded-full top-1 z-10 transition-all duration-300"
           style={{
@@ -232,7 +232,7 @@ export function PhotoMobilityControl({ radius, onChange }: { radius: number; onC
         <span className="text-primary font-bold text-xs">{radius} 千米</span>
       </div>
       <div className="relative w-full h-4 pt-1">
-        <div className="absolute w-full h-1 bg-white/10 rounded-full top-1"></div>
+        <div className="absolute w-full h-1 bg-black/20 dark:bg-white/10 rounded-full top-1"></div>
         <input
           className="absolute w-full h-1 appearance-none bg-transparent cursor-pointer z-10 top-1"
           style={{ accentColor: "var(--color-accent-pink)" }}
@@ -252,7 +252,7 @@ export function PhotoSkillControl({ skill, onChange }: { skill: string; onChange
         <span className="text-primary font-bold text-xs">{cameraSkills.find(s => s.value === skill)?.label}</span>
       </div>
       <div className="flex-1 relative px-4 flex items-center">
-        <div className="absolute w-[calc(100%-2rem)] h-1 bg-white/10 rounded-full"></div>
+        <div className="absolute w-[calc(100%-2rem)] h-1 bg-black/20 dark:bg-white/10 rounded-full"></div>
         <input
           className="relative w-full h-1 appearance-none bg-transparent cursor-pointer z-10"
           style={{ accentColor: "var(--color-accent-pink)" }}
