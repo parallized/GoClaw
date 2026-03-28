@@ -1,3 +1,4 @@
+import { motion } from "framer-motion";
 import type {
   PhotoWeekPlan,
   PlanExecutionStage,
@@ -6,6 +7,12 @@ import type {
   PlanResult,
   RunPlan
 } from "@goclaw/contracts";
+
+const fadeUp = {
+  initial: { opacity: 0, y: 16 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.45, ease: [0.19, 1, 0.22, 1] },
+};
 
 function formatOutcomeLabel(outcome: PlanMeta["process"][number]["outcome"]): string {
   switch (outcome) {
@@ -95,20 +102,29 @@ export function ExecutionPanel({
       </div>
 
       <div className="space-y-4">
-        {stages.map((stage) => {
+        {stages.map((stage, i) => {
           const status = stageStatuses[stage.id] ?? "pending";
           return (
-            <article key={stage.id} className={`rounded-xl p-6 transition-colors ${status === "running" ? "bg-accent-blue/10" : "bg-surface-gray"}`}>
+            <motion.article
+              key={stage.id}
+              initial={{ opacity: 0, x: -12 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.35, delay: i * 0.05, ease: [0.19, 1, 0.22, 1] }}
+              className={`rounded-xl p-6 transition-colors ${status === "running" ? "bg-accent-blue/10" : "bg-surface-gray"}`}
+            >
               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                 <div>
                   <div className="font-bold text-primary">{stage.order + 1}. {stage.title}</div>
                   {stage.detail && <p className="text-secondary text-sm leading-relaxed mt-2 mb-0">{stage.detail}</p>}
                 </div>
                 <div className="text-right shrink-0">
-                  <div className={`text-sm font-bold uppercase tracking-widest ${status === "running" ? "text-accent-blue" : (status === "completed" ? "text-accent-green" : "text-tertiary")}`}>{formatStageStatusLabel(status)}</div>
+                  <div className={`text-sm font-bold uppercase tracking-widest ${status === "running" ? "text-accent-blue" : (status === "completed" ? "text-accent-green" : "text-tertiary")}`}>
+                    {formatStageStatusLabel(status)}
+                    {status === "running" && <span className="inline-block ml-1 animate-pulse">…</span>}
+                  </div>
                 </div>
               </div>
-            </article>
+            </motion.article>
           );
         })}
       </div>
@@ -118,7 +134,7 @@ export function ExecutionPanel({
 
 function RunPlanView({ plan }: { plan: RunPlan }) {
   return (
-    <div className="space-y-12 animate-fade-in">
+    <motion.div className="space-y-12" {...fadeUp}>
       <header>
         <div className="text-accent-green text-sm font-bold uppercase tracking-widest mb-4 flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-accent-green"></span> 最佳出发时间
@@ -138,7 +154,13 @@ function RunPlanView({ plan }: { plan: RunPlan }) {
         </h3>
         <div className="space-y-6">
           {plan.routes.map((route, idx) => (
-            <article key={route.name} className="bg-surface-gray p-8 rounded-2xl group">
+            <motion.article
+              key={route.name}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: idx * 0.06, ease: [0.19, 1, 0.22, 1] }}
+              className="bg-surface-gray p-8 rounded-2xl group"
+            >
               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-6">
                 <div className="flex items-start gap-4">
                   <span className="flex items-center justify-center w-8 h-8 shrink-0 rounded-lg bg-primary text-sm font-bold text-white border-none">{idx + 1}</span>
@@ -157,39 +179,42 @@ function RunPlanView({ plan }: { plan: RunPlan }) {
 
               <p className="text-secondary mt-6 text-base leading-relaxed">{route.why}</p>
 
-              <div className="mt-8 flex flex-wrap items-center gap-3">
-                {route.tags.map((tag) => (
-                  <span key={tag} className="text-sm font-bold uppercase tracking-widest bg-surface text-tertiary px-3 py-1.5 rounded-lg">{tag}</span>
-                ))}
-                <span className="text-sm font-bold uppercase tracking-widest n-tag-blue px-3 py-1.5 rounded-lg">来源: {route.routeSource}</span>
-              </div>
-            </article>
+              {route.highlights && route.highlights.length > 0 && (
+                <div className="mt-6 flex flex-wrap gap-2">
+                  {route.highlights.map((h) => (
+                    <span key={h} className="n-tag-green text-xs font-bold px-3 py-1.5 rounded-full">{h}</span>
+                  ))}
+                </div>
+              )}
+            </motion.article>
           ))}
         </div>
       </section>
 
-      <section className="bg-surface-gray rounded-md p-8 border border-edge">
-        <h3 className="mb-6 text-sm font-bold uppercase tracking-widest text-primary flex items-center gap-2">
-          <span>💡</span> 贴心建议
-        </h3>
-        <ul className="list-none m-0 p-0 space-y-4">
-          {plan.tips.map((tip) => (
-            <li key={tip} className="flex gap-4 items-start text-secondary text-sm">
-              <span className="text-accent-green font-bold shrink-0">·</span>
-              <span className="leading-relaxed">{tip}</span>
-            </li>
-          ))}
-        </ul>
-      </section>
+      {plan.tips && plan.tips.length > 0 && (
+        <section className="bg-surface-gray rounded-md p-8 border border-edge">
+          <h3 className="mb-6 text-sm font-bold uppercase tracking-widest text-primary flex items-center gap-2">
+            <span>💡</span> 跑步贴士
+          </h3>
+          <ul className="list-none m-0 p-0 space-y-4">
+            {plan.tips.map((tip) => (
+              <li key={tip} className="flex gap-4 items-start text-secondary text-sm">
+                <span className="text-accent-green font-bold shrink-0">·</span>
+                <span className="leading-relaxed">{tip}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <ProcessView meta={plan.meta} />
-    </div>
+    </motion.div>
   );
 }
 
 function PhotoWeekView({ plan }: { plan: PhotoWeekPlan }) {
   return (
-    <div className="space-y-12 animate-fade-in">
+    <motion.div className="space-y-12" {...fadeUp}>
       <header>
         <div className="text-accent-pink text-sm font-bold uppercase tracking-widest mb-4 flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-accent-pink"></span> 周度摄影计划
@@ -199,8 +224,14 @@ function PhotoWeekView({ plan }: { plan: PhotoWeekPlan }) {
       </header>
 
       <div className="space-y-16">
-        {plan.days.map((day) => (
-          <section key={day.date} className="relative">
+        {plan.days.map((day, dayIdx) => (
+          <motion.section
+            key={day.date}
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, delay: dayIdx * 0.07, ease: [0.19, 1, 0.22, 1] }}
+            className="relative"
+          >
             <header className="mb-10 flex flex-col sm:flex-row sm:items-baseline justify-between gap-2">
               <h3 className="text-3xl font-bold text-primary">{day.date}</h3>
               <div className="text-accent-pink font-bold text-sm uppercase tracking-widest">{day.weather}</div>
@@ -239,33 +270,35 @@ function PhotoWeekView({ plan }: { plan: PhotoWeekPlan }) {
                       </div>
                     </div>
 
-                    <a className="self-start text-sm font-bold n-tag-pink no-underline transition-all hover:bg-accent-pink/10 px-5 py-3 rounded-lg uppercase tracking-widest flex items-center" href={spot.navigationUrl} target="_blank" rel="noreferrer">
+                    <a className="text-sm font-bold n-tag-pink no-underline transition-all hover:bg-accent-pink/10 px-5 py-3 rounded-lg uppercase tracking-widest flex items-center" href={spot.navigationUrl} target="_blank" rel="noreferrer">
                       查看路线 ↗
                     </a>
                   </div>
                 </article>
               ))}
             </div>
-          </section>
+          </motion.section>
         ))}
       </div>
 
-      <section className="bg-surface-gray rounded-md p-8 border border-edge">
-        <h3 className="mb-6 text-sm font-bold uppercase tracking-widest text-primary flex items-center gap-2">
-          <span>📸</span> 全局贴士
-        </h3>
-        <ul className="list-none m-0 p-0 space-y-4">
-          {plan.tips.map((tip) => (
-            <li key={tip} className="flex gap-4 items-start text-secondary text-sm">
-              <span className="text-accent-pink font-bold shrink-0">✨</span>
-              <span className="leading-relaxed">{tip}</span>
-            </li>
-          ))}
-        </ul>
-      </section>
+      {plan.tips && plan.tips.length > 0 && (
+        <section className="bg-surface-gray rounded-md p-8 border border-edge">
+          <h3 className="mb-6 text-sm font-bold uppercase tracking-widest text-primary flex items-center gap-2">
+            <span>📸</span> 全局贴士
+          </h3>
+          <ul className="list-none m-0 p-0 space-y-4">
+            {plan.tips.map((tip) => (
+              <li key={tip} className="flex gap-4 items-start text-secondary text-sm">
+                <span className="text-accent-pink font-bold shrink-0">✨</span>
+                <span className="leading-relaxed">{tip}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <ProcessView meta={plan.meta} />
-    </div>
+    </motion.div>
   );
 }
 
@@ -275,7 +308,7 @@ export function PlanResultView({
   plan: PlanResult;
 }) {
   return (
-    <div className="space-y-12 animate-slide-up">
+    <div className="space-y-12">
       {plan.type === "run_tomorrow" ? <RunPlanView plan={plan} /> : <PhotoWeekView plan={plan} />}
     </div>
   );
