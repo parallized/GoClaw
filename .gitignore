@@ -7,4 +7,4 @@ build
 .env.local
 apps/api/dist
 apps/web/dist
-
+apps/api/src/logs
