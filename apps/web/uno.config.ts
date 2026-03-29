@@ -44,7 +44,7 @@ export default defineConfig({
     // Buttons
     [
       "n-btn-primary",
-      "bg-primary text-base-bg px-8 py-3 text-sm font-bold uppercase tracking-[0.2em] rounded-xl transition-all duration-300 hover:opacity-90 active:scale-95 cursor-pointer border-0 shadow-lg shadow-black/20",
+      "bg-primary text-base-bg px-8 py-3 text-sm font-bold uppercase tracking-[0.2em] rounded-xl transition-all duration-300 hover:bg-primary/85 active:scale-95 cursor-pointer border-0 shadow-lg shadow-black/20",
     ],
     [
       "n-btn-ghost",

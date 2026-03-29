@@ -1,8 +1,15 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { AiProvider } from "../../domain/service-types";
 import { env } from "../../config/env";
 import { AppError, normalizeUpstreamServiceError } from "../../lib/errors";
 import { logPlanExecution } from "../../lib/plan-execution";
 import { buildAiApiUrl } from "./api-url";
+
+const IS_DEV = process.env.NODE_ENV !== "production";
+const __filename = fileURLToPath(import.meta.url);
+const LOGS_DIR = join(dirname(__filename), "..", "..", "logs");
 
 // const USER_AGENT = "GoClaw/0.1 (+https://local.dev)";
 const MAX_RETRIES = 3;
@@ -222,6 +229,38 @@ async function readChunkWithIdleTimeout(
   }
 }
 
+async function writeDevLog(
+  input: { system: string; user: string; temperature?: number },
+  streamResult: string
+): Promise<void> {
+  try {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const logDir = join(LOGS_DIR, timestamp);
+    await mkdir(logDir, { recursive: true });
+
+    const inputContent = [
+      "=== System Prompt ===",
+      "",
+      input.system,
+      "",
+      "",
+      "=== User Prompt ===",
+      "",
+      input.user,
+      "",
+      "",
+      "=== Temperature ===",
+      "",
+      String(input.temperature ?? 0.3),
+    ].join("\n");
+
+    await writeFile(join(logDir, "input.txt"), inputContent, "utf-8");
+    await writeFile(join(logDir, "stream.txt"), streamResult, "utf-8");
+  } catch {
+    // logging is best-effort, never block the main flow
+  }
+}
+
 export class OpenAiCompatibleProvider implements AiProvider {
   readonly name = "openai-compatible";
 
@@ -296,6 +335,11 @@ export class OpenAiCompatibleProvider implements AiProvider {
         }
 
         logPlanExecution("info", `AI 服务返回成功，文本长度 ${content.length}`);
+
+        if (IS_DEV) {
+          await writeDevLog(input, content);
+        }
+
         return content;
       } catch (error) {
         lastError = error;

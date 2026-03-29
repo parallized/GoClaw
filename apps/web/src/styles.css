@@ -30,23 +30,23 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not(.light) {
-    --color-base-bg: #0b0e14;
-    --color-primary: #f8fafc;
-    --color-secondary: #94a3b8;
-    --color-tertiary: #64748b;
+    --color-base-bg: #121212;
+    --color-primary: #eeeeee;
+    --color-secondary: #a0a0a0;
+    --color-tertiary: #707070;
 
-    --color-surface: rgba(22, 27, 34, 0.45);
-    --color-surface-hover: rgba(30, 41, 59, 0.6);
-    --color-surface-gray: rgba(15, 23, 42, 0.6);
+    --color-surface: rgba(28, 28, 28, 0.65);
+    --color-surface-hover: rgba(42, 42, 42, 0.75);
+    --color-surface-gray: rgba(35, 35, 35, 0.6);
     --color-edge: rgba(255, 255, 255, 0.06);
     --color-edge-light: rgba(255, 255, 255, 0.03);
 
-    /* Global Brand Accents (Restored) */
-    --color-accent-blue: #60a5fa;
+    /* Global Brand Accents — cyan/teal shift */
+    --color-accent-blue: #22d3ee;
     --color-accent-orange: #fbbf24;
-    --color-accent-green: #34d399;
+    --color-accent-green: #4ade80;
     --color-accent-pink: #f472b6;
-    --color-accent-indigo: #818cf8;
+    --color-accent-indigo: #67e8f9;
 
     --color-error-bg: rgba(239, 68, 68, 0.1);
     --color-error-border: rgba(239, 68, 68, 0.25);
@@ -55,23 +55,23 @@
 }
 
 :root.dark {
-  --color-base-bg: #0b0e14;
-  --color-primary: #f8fafc;
-  --color-secondary: #94a3b8;
-  --color-tertiary: #64748b;
+  --color-base-bg: #121212;
+  --color-primary: #eeeeee;
+  --color-secondary: #a0a0a0;
+  --color-tertiary: #707070;
 
-  --color-surface: rgba(22, 27, 34, 0.45);
-  --color-surface-hover: rgba(30, 41, 59, 0.6);
-  --color-surface-gray: rgba(15, 23, 42, 0.6);
+  --color-surface: rgba(28, 28, 28, 0.65);
+  --color-surface-hover: rgba(42, 42, 42, 0.75);
+  --color-surface-gray: rgba(35, 35, 35, 0.6);
   --color-edge: rgba(255, 255, 255, 0.06);
   --color-edge-light: rgba(255, 255, 255, 0.03);
 
-  /* Global Brand Accents (Restored) */
-  --color-accent-blue: #60a5fa;
+  /* Global Brand Accents — cyan/teal shift */
+  --color-accent-blue: #22d3ee;
   --color-accent-orange: #fbbf24;
-  --color-accent-green: #34d399;
+  --color-accent-green: #4ade80;
   --color-accent-pink: #f472b6;
-  --color-accent-indigo: #818cf8;
+  --color-accent-indigo: #67e8f9;
 
   /* Specific Map Tag Palette (Inky/Muted) */
   --color-tag-inky-cyan: #217069;
@@ -165,6 +165,34 @@ body {
   letter-spacing: -0.012em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  position: relative;
+}
+
+/* ── Noise texture overlay for dark mode ── */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.dark body::after,
+:root:not(.light) body::after {
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 256px 256px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) body::after {
+    opacity: 0.025;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 256px 256px;
+  }
 }
 
 h1, h2, h3, h4 {
@@ -185,24 +213,34 @@ select {
 .n-glass-card {
   position: relative;
   background: var(--color-surface);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   border: 1px solid var(--color-edge);
-  border-radius: 24px;
+  border-radius: 16px;
   overflow: hidden;
-  /* NO transition: all here to avoid conflict with Framer Motion */
+}
+
+.n-glass-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.03) 0%, transparent 50%, rgba(255,255,255,0.01) 100%);
+  pointer-events: none;
 }
 
 .n-scenario-card {
   cursor: pointer;
-  border: 1px solid var(--color-edge);
-  background: var(--color-surface);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
+  border: none;
+  background: var(--color-surface-gray);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.3),
+    0 8px 32px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .n-scenario-card[aria-selected="true"] {
   border-color: var(--color-accent-indigo);
-  background: rgba(139, 92, 246, 0.08);
+  background: rgba(103, 232, 249, 0.06);
 }
 
 /* ── Pseudo-element styles (cannot be expressed in UnoCSS) ── */

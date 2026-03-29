@@ -203,17 +203,12 @@ export function TerrainControl({ selected, onChange }: { selected: string[]; onC
   return (
     <div className="flex flex-wrap gap-2">
       {runTerrains.map((t) => {
-        const isSelected = selected?.includes(t.value);
         const tagClass = getTagColorClass(t.value);
         return (
           <button
             key={t.value}
             type="button"
-            aria-pressed={isSelected}
-            className={`n-tag transition-all ${isSelected
-              ? `${tagClass} opacity-100 scale-[1.02]`
-              : "opacity-40 hover:opacity-70"
-              }`}
+            className={`n-tag transition-all ${tagClass} hover:brightness-110`}
             onClick={() => onChange(toggleInArray(selected, t.value))}
           >
             <Icon icon={t.icon} className="text-base" />
@@ -272,17 +267,12 @@ export function PhotoThemesControl({ selected, onChange }: { selected: string[];
   return (
     <div className="flex flex-wrap gap-2">
       {photoThemes.map((t) => {
-        const isSelected = selected?.includes(t.value);
         const tagClass = getTagColorClass(t.value);
         return (
           <button
             key={t.value}
             type="button"
-            aria-pressed={isSelected}
-            className={`n-tag transition-all ${isSelected
-              ? `${tagClass} opacity-100 scale-[1.02]`
-              : "opacity-40 hover:opacity-70"
-              }`}
+            className={`n-tag transition-all ${tagClass} hover:brightness-110`}
             onClick={() => onChange(toggleInArray(selected, t.value))}
           >
             <Icon icon={t.icon} className="text-base" />
@@ -339,10 +329,10 @@ export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunCh
       const circle = new AMap.Circle({
         center: [location.longitude, location.latitude],
         radius: activeRadiusMeter,
-        strokeColor: "#818cf8", // matching accent-indigo
+        strokeColor: "#22d3ee", // cyan accent
         strokeOpacity: 0.6,
         strokeWeight: 2,
-        fillColor: "#818cf8",
+        fillColor: "#22d3ee",
         fillOpacity: 0.08,
         strokeStyle: "dashed",
         strokeDasharray: [10, 10],

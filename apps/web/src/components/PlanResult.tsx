@@ -172,7 +172,7 @@ function RunPlanView({ plan }: { plan: RunPlan }) {
                     </div>
                   </div>
                 </div>
-                <a className="text-sm font-bold bg-tag-blue-bg text-tag-blue-text no-underline transition-all hover:bg-accent-blue/10 px-4 py-2.5 rounded-lg uppercase tracking-widest flex items-center" href={route.navigationUrl} target="_blank" rel="noreferrer">
+                <a className="text-sm font-bold bg-tag-blue-bg text-tag-blue-text no-underline transition-all hover:bg-accent-blue hover:text-white px-4 py-2.5 rounded-lg uppercase tracking-widest flex items-center" href={route.navigationUrl} target="_blank" rel="noreferrer">
                   立即导航 ↗
                 </a>
               </div>
@@ -270,7 +270,7 @@ function PhotoWeekView({ plan }: { plan: PhotoWeekPlan }) {
                       </div>
                     </div>
 
-                    <a className="text-sm font-bold bg-tag-pink-bg text-tag-pink-text no-underline transition-all hover:bg-accent-pink/10 px-5 py-3 rounded-lg uppercase tracking-widest flex items-center" href={spot.navigationUrl} target="_blank" rel="noreferrer">
+                    <a className="text-sm font-bold bg-tag-pink-bg text-tag-pink-text no-underline transition-all hover:bg-accent-pink hover:text-white px-5 py-3 rounded-lg uppercase tracking-widest flex items-center" href={spot.navigationUrl} target="_blank" rel="noreferrer">
                       查看路线 ↗
                     </a>
                   </div>

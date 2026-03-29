@@ -247,18 +247,18 @@ export type ScenarioManifest = z.infer<typeof scenarioManifestSchema>;
 export const scenarioCatalog: ScenarioManifest[] = [
   {
     id: "run_tomorrow",
-    title: "晨间跑者",
-    cta: "预约清晨",
+    title: "运动",
+    cta: "预约路线",
     description: "穿越清晨的街道与公园，为您寻觅最舒适的温度与光景。",
-    capabilities: ["气象演算", "动态路网", "紫外线监测", "补水规划"],
+    capabilities: ["气象演算", "动态路网"],
     estimatedLatencyMs: 2200
   },
   {
     id: "photo_week",
-    title: "城市猎影",
-    cta: "开启寻梦",
-    description: "捕捉瞬息万变的城市光影，在这个周末，与相机一起去远行。",
-    capabilities: ["光影模拟", "机位推演", "参数预设", "多维天气"],
+    title: "摄影",
+    cta: "寻找机位",
+    description: "捕捉瞬息万变的光影，在这个周末，与相机一起去远行。",
+    capabilities: ["参数预设", "天气参考"],
     estimatedLatencyMs: 3200
   }
 ];

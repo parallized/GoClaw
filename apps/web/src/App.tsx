@@ -254,7 +254,6 @@ export function App() {
                     {step === "scenario" && (
                       <ScenarioStep
                         scenarios={scenarios}
-                        scenarioId={scenarioId}
                         onSelect={(id) => { setScenarioId(id); setAppStep("form"); }}
                       />
                     )}
