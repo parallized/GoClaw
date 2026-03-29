@@ -1,0 +1,108 @@
+/* Isolated Map-Specific Theme Classes (Inky Palette) */
+
+:root {
+  --color-tag-inky-cyan: #217069;
+  --color-tag-inky-sage: #3a5a40;
+  --color-tag-inky-slate: #4a5568;
+  --color-tag-inky-gold: #a68a64;
+  --color-tag-inky-lavender: #8b96b2;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --color-tag-inky-cyan: #217069;
+    --color-tag-inky-sage: #3a5a40;
+    --color-tag-inky-slate: #4a5568;
+    --color-tag-inky-gold: #a68a64;
+    --color-tag-inky-lavender: #8b96b2;
+  }
+}
+
+:root.dark {
+  --color-tag-inky-cyan: #217069;
+  --color-tag-inky-sage: #3a5a40;
+  --color-tag-inky-slate: #4a5568;
+  --color-tag-inky-gold: #a68a64;
+  --color-tag-inky-lavender: #8b96b2;
+}
+
+/* Specific classes for tags to decouple from UnoCSS global shortcuts */
+.map-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 9999px;
+  padding: 0.25rem 0.75rem;
+  font-size: 11px;
+  font-weight: 700;
+  border-width: 1px;
+  border-style: solid;
+  transition: all 0.15s cubic-bezier(0.19, 1, 0.22, 1);
+  opacity: 0.25; /* dimmer unselected */
+  filter: saturate(0.85);
+}
+
+.map-tag:hover {
+  opacity: 0.55;
+  filter: saturate(1);
+}
+
+.map-tag[aria-pressed="true"],
+.map-tag.active {
+  opacity: 1;
+  filter: saturate(1.2) brightness(1.15);
+  box-shadow: 0 0 14px currentColor;
+  transform: scale(1.02);
+}
+
+.map-tag--cyan {
+  background-color: rgba(33, 112, 105, 0.06);
+  color: var(--color-tag-inky-cyan);
+  border-color: rgba(33, 112, 105, 0.1);
+}
+
+.map-tag--sage {
+  background-color: rgba(58, 90, 64, 0.06);
+  color: #84a28a; /* softer green for dark text contrast */
+  border-color: rgba(58, 90, 64, 0.1);
+}
+
+@media (prefers-color-scheme: light) {
+  .map-tag--sage { color: var(--color-tag-inky-sage); }
+}
+
+.map-tag--gold {
+  background-color: rgba(166, 138, 100, 0.06);
+  color: var(--color-tag-inky-gold);
+  border-color: rgba(166, 138, 100, 0.1);
+}
+
+.map-tag--slate {
+  background-color: rgba(74, 85, 104, 0.06);
+  color: var(--color-tag-inky-slate);
+  border-color: rgba(74, 85, 104, 0.1);
+}
+
+.map-tag--lavender {
+  background-color: rgba(139, 150, 178, 0.06);
+  color: var(--color-tag-inky-lavender);
+  border-color: rgba(139, 150, 178, 0.1);
+}
+
+.map-tag--pink {
+  background-color: rgba(139, 94, 94, 0.06);
+  color: #a47171;
+  border-color: rgba(139, 94, 94, 0.12);
+}
+
+.map-tag--forest {
+  background-color: rgba(58, 90, 64, 0.08);
+  color: #84a28a;
+  border-color: rgba(58, 90, 64, 0.15);
+}
+
+.map-tag--indigo {
+  background-color: rgba(74, 85, 104, 0.08);
+  color: #8b96b2;
+  border-color: rgba(74, 85, 104, 0.15);
+}

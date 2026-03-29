@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import { Icon } from "@iconify/react";
 import type {
   PhotoWeekRequest,
@@ -12,7 +13,7 @@ import type {
 } from "@goclaw/contracts";
 import { PlanResultView, ExecutionPanel } from "./components/PlanResult";
 import { FormSection, TimeWindowControl, TerrainControl, PhotoThemesControl, PhotoSkillControl, getTagColorHex } from "./components/FormSection";
-import { ScenarioCard } from "./components/ScenarioCard";
+import { ScenarioStep } from "./components/ScenarioStep";
 import { fetchScenarios, streamPlan } from "./lib/api";
 import { defaultPhotoForm, defaultRunForm, defaultScenarioId } from "./lib/constants";
 import { detectLocation } from "./lib/geolocation";
@@ -204,13 +205,17 @@ export function App() {
             const isCurrent = diff === 0;
 
             return (
-              <div
+              <motion.div
                 key={step}
-                className={`absolute inset-0 origin-top transition-all duration-700 ease-[cubic-bezier(0.19,1,0.22,1)] rounded-t-2xl md:rounded-t-3xl pointer-events-none`}
+                className="absolute inset-0 origin-top rounded-t-2xl md:rounded-t-3xl"
+                animate={{
+                  opacity: isCurrent ? 1 : Math.max(0, 1 - diff * 0.4),
+                  y: isCurrent ? 0 : -(diff * 28),
+                  scale: isCurrent ? 1 : Math.max(0.85, 1 - diff * 0.045),
+                }}
+                transition={{ type: "spring", stiffness: 300, damping: 35 }}
                 style={{
                   zIndex: 10 - diff,
-                  opacity: isCurrent ? 1 : Math.max(0, 1 - diff * 0.4),
-                  transform: isCurrent ? "none" : `translateY(-${diff * 28}px) scale(${1 - diff * 0.045})`,
                   pointerEvents: isCurrent ? "auto" : "none",
                 }}
               >
@@ -247,44 +252,26 @@ export function App() {
 
                   <div className={`flex-1 flex flex-col w-full h-full overflow-y-auto overflow-x-hidden p-6 sm:p-12 ${step !== "scenario" ? "pt-12 sm:pt-16" : ""}`}>
                     {step === "scenario" && (
-                      <div className="flex flex-col h-full animate-fade-in">
-                        <header className="mb-14">
-                          <h1 className="text-4xl sm:text-5xl font-bold leading-tight tracking-tight text-primary mb-4 flex items-center gap-3">
-                            <Icon icon="mingcute:search-3-line" className="text-accent-indigo text-4xl sm:text-5xl" />
-                            GoClaw
-                          </h1>
-                          <p className="text-secondary text-base sm:text-lg leading-relaxed max-w-xl mb-0">
-                            基于真实天气、地点与路线数据，为你的跑步和摄影做出优雅的规划。
-                          </p>
-                        </header>
-                        <section aria-label="场景选择" className="flex-1">
-                          <h2 className="mb-8 text-xl font-bold tracking-tight text-primary flex items-center gap-3">
-                            选择场景 <span className="text-tertiary font-normal text-sm hidden sm:inline">— 开启专属规划</span>
-                          </h2>
-                          <div className="grid gap-6 sm:grid-cols-2" role="listbox" aria-label="场景列表">
-                            {scenarios.map((s) => (
-                              <ScenarioCard
-                                key={s.id}
-                                scenario={s}
-                                active={s.id === scenarioId}
-                                onSelect={(nextScenarioId) => {
-                                  setScenarioId(nextScenarioId);
-                                  setAppStep("form");
-                                }}
-                              />
-                            ))}
-                          </div>
-                        </section>
-                      </div>
+                      <ScenarioStep
+                        scenarios={scenarios}
+                        scenarioId={scenarioId}
+                        onSelect={(id) => { setScenarioId(id); setAppStep("form"); }}
+                      />
                     )}
 
                     {step === "form" && (
+                      <motion.div
+                        className="flex flex-col flex-1 h-full relative pt-8 sm:pt-12"
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.35, ease: [0.19, 1, 0.22, 1] }}
+                      >
                       <form
                         onSubmit={(e) => {
                           e.preventDefault();
                           void handleSubmit();
                         }}
-                        className="flex flex-col flex-1 h-full animate-fade-in relative pt-8 sm:pt-12"
+                        className="flex flex-col flex-1 h-full"
                       >
                         <div className="flex flex-col h-full w-full max-w-5xl mx-auto px-4 sm:px-6">
 
@@ -298,7 +285,7 @@ export function App() {
                             </p>
 
                             <div className="flex flex-col sm:flex-row items-end sm:items-center gap-4 w-full">
-                              <button type="submit" disabled={loading} className="flex items-center justify-center gap-2 px-8 py-3 text-sm font-bold bg-primary hover:opacity-90 rounded-xl transition-all shadow-lg w-full sm:w-fit border border-transparent hover:scale-[1.02] active:scale-95 shrink-0" style={{ color: "var(--color-base-bg)" }}>
+                              <button type="submit" disabled={loading} className="n-btn-primary w-full sm:w-fit flex items-center justify-center gap-2">
                                 {loading ? "正在推演..." : "生成规划"}
                               </button>
 
@@ -350,31 +337,42 @@ export function App() {
 
                         </div>
                       </form>
+                      </motion.div>
                     )}
 
                     {step === "execution" && (
-                      <div className="flex-1 flex flex-col h-full animate-fade-in">
+                      <motion.div
+                        className="flex-1 flex flex-col h-full"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.3 }}
+                      >
                         <ExecutionPanel stages={executionStages} stageStatuses={executionStageStatuses} loading={loading} />
-                      </div>
+                      </motion.div>
                     )}
 
                     {step === "result" && (
-                      <div className="flex-1 flex flex-col h-full animate-fade-in">
+                      <motion.div
+                        className="flex-1 flex flex-col h-full"
+                        initial={{ opacity: 0, y: 12 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.4, ease: [0.19, 1, 0.22, 1] }}
+                      >
                         {result ? <PlanResultView plan={result} /> : <div className="text-center text-secondary py-20">无结果数据</div>}
 
                         <div className="mt-auto pt-16 text-center">
                           <button
                             onClick={() => { setAppStep("scenario"); setResult(null); }}
-                            className="bg-surface/50 hover:bg-surface border border-white/10 px-8 py-3 text-sm font-bold text-primary transition-all uppercase tracking-[0.2em] shadow-sm hover:shadow-md cursor-pointer rounded-lg"
+                            className="n-btn-ghost"
                           >
                             ↺ 重新规划
                           </button>
                         </div>
-                      </div>
+                      </motion.div>
                     )}
                   </div>
                 </div>
-              </div>
+              </motion.div>
             );
           })}
         </div>

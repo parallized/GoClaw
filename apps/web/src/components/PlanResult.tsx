@@ -9,9 +9,9 @@ import type {
 } from "@goclaw/contracts";
 
 const fadeUp = {
-  initial: { opacity: 0, y: 16 },
+  initial: { opacity: 0, y: 12 },
   animate: { opacity: 1, y: 0 },
-  transition: { duration: 0.45, ease: [0.19, 1, 0.22, 1] },
+  transition: { duration: 0.2, ease: "circOut" } as any,
 };
 
 function formatOutcomeLabel(outcome: PlanMeta["process"][number]["outcome"]): string {
@@ -64,7 +64,7 @@ function ProcessView({ meta }: { meta: PlanMeta }) {
             <div className="flex-1 pb-6 border-none">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
                 <div className="font-bold text-primary">{step.title}</div>
-                <div className={`text-sm font-bold px-3 py-1 rounded uppercase tracking-widest ${step.outcome === "success" ? "n-tag-green" : "n-tag-orange"}`}>
+                <div className={`text-sm font-bold px-3 py-1 rounded uppercase tracking-widest ${step.outcome === "success" ? "bg-tag-green-bg text-tag-green-text" : "bg-tag-orange-bg text-tag-orange-text"}`}>
                   {formatOutcomeLabel(step.outcome)}
                 </div>
               </div>
@@ -172,17 +172,17 @@ function RunPlanView({ plan }: { plan: RunPlan }) {
                     </div>
                   </div>
                 </div>
-                <a className="text-sm font-bold n-tag-blue no-underline transition-all hover:bg-accent-blue/10 px-4 py-2.5 rounded-lg uppercase tracking-widest flex items-center" href={route.navigationUrl} target="_blank" rel="noreferrer">
+                <a className="text-sm font-bold bg-tag-blue-bg text-tag-blue-text no-underline transition-all hover:bg-accent-blue/10 px-4 py-2.5 rounded-lg uppercase tracking-widest flex items-center" href={route.navigationUrl} target="_blank" rel="noreferrer">
                   立即导航 ↗
                 </a>
               </div>
 
               <p className="text-secondary mt-6 text-base leading-relaxed">{route.why}</p>
 
-              {route.highlights && route.highlights.length > 0 && (
+              {(route as any).highlights && (route as any).highlights.length > 0 && (
                 <div className="mt-6 flex flex-wrap gap-2">
-                  {route.highlights.map((h) => (
-                    <span key={h} className="n-tag-green text-xs font-bold px-3 py-1.5 rounded-full">{h}</span>
+                  {(route as any).highlights.map((h: string) => (
+                    <span key={h} className="map-tag map-tag--sage">{h}</span>
                   ))}
                 </div>
               )}
@@ -245,7 +245,7 @@ function PhotoWeekView({ plan }: { plan: PhotoWeekPlan }) {
                     <p className="text-secondary text-base leading-relaxed">{spot.reason}</p>
                     <div className="mt-6 flex flex-wrap gap-3">
                       {spot.categories.map((cat) => (
-                        <span key={cat} className="text-sm font-bold uppercase tracking-widest n-tag-pink px-3 py-1.5 rounded-lg">{cat}</span>
+                        <span key={cat} className="map-tag map-tag--pink">{cat}</span>
                       ))}
                     </div>
                   </div>
@@ -270,7 +270,7 @@ function PhotoWeekView({ plan }: { plan: PhotoWeekPlan }) {
                       </div>
                     </div>
 
-                    <a className="text-sm font-bold n-tag-pink no-underline transition-all hover:bg-accent-pink/10 px-5 py-3 rounded-lg uppercase tracking-widest flex items-center" href={spot.navigationUrl} target="_blank" rel="noreferrer">
+                    <a className="text-sm font-bold bg-tag-pink-bg text-tag-pink-text no-underline transition-all hover:bg-accent-pink/10 px-5 py-3 rounded-lg uppercase tracking-widest flex items-center" href={spot.navigationUrl} target="_blank" rel="noreferrer">
                       查看路线 ↗
                     </a>
                   </div>

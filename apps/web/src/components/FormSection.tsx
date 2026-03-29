@@ -4,27 +4,23 @@ import { Icon } from "@iconify/react";
 import type { CameraSkill, PhotoTheme, RunTerrain, ScenarioId } from "@goclaw/contracts";
 import type { PhotoWeekRequest, RunPlanRequest } from "@goclaw/contracts";
 
-function getTagColorClass(value: string) {
+export function getTagColorClass(value: string) {
   switch (value) {
     case "park":
     case "shaded":
     case "nature":
-      return "n-tag--green";
+    case "waterfront":
+      return "map-tag--sage";
     case "flat":
     case "urban":
-      return "n-tag--cyan";
     case "architecture":
-      return "n-tag--blue";
-    case "waterfront":
-      return "n-tag--teal";
     case "humanity":
-      return "n-tag--purple";
-    case "track":
-      return "n-tag--orange";
     case "night":
-      return "n-tag--amber";
+      return "map-tag--cyan";
+    case "track":
+      return "map-tag--gold";
     default:
-      return "n-tag--indigo";
+      return "map-tag--slate";
   }
 }
 
@@ -33,18 +29,18 @@ export function getTagColorHex(value: string) {
     case "park":
     case "shaded":
     case "nature":
-      return "#3a5a40"; // deep sage
+      return "#10b981"; // emerald green
     case "flat":
     case "urban":
       return "#64748b"; // slate
     case "architecture":
-      return "#475569"; // steel blue
+      return "#3b82f6"; // bright blue
     case "waterfront":
-      return "#37523d"; // forest
+      return "#06b6d4"; // cyan/teal
     case "humanity":
-      return "#4338ca"; // regal indigo
+      return "#6366f1"; // indigo
     case "track":
-      return "#92400e"; // muted bronze
+      return "#f59e0b"; // amber/orange
     case "night":
       return "#818cf8"; // soft indigo
     default:
@@ -136,7 +132,7 @@ export function RunDistanceControl({ max, onChange }: { max: number; onChange: (
   return (
     <div className="absolute top-4 right-4 z-20 bg-surface/40 backdrop-blur-md p-3 rounded-xl border border-white/5 w-40 animate-in fade-in slide-in-from-right-4 duration-500 pointer-events-auto shadow-sm">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-[10px] font-bold text-tertiary uppercase tracking-widest">距离范围</span>
+        <span className="text-[12px] text-tertiary uppercase tracking-widest">距离范围</span>
         <span className="text-primary font-bold text-xs">{max} km</span>
       </div>
       <div className="relative w-full h-4 pt-1">
@@ -166,8 +162,8 @@ export function TimeWindowControl({ from, to, onChange, colors }: { from: string
 
   const gradient = colors && colors.length > 0
     ? (colors.length === 1
-        ? colors[0]
-        : `linear-gradient(to right, ${colors.join(", ")})`)
+      ? colors[0]
+      : `linear-gradient(to right, ${colors.join(", ")})`)
     : "var(--color-accent-green)";
 
   return (
@@ -206,18 +202,25 @@ export function TimeWindowControl({ from, to, onChange, colors }: { from: string
 export function TerrainControl({ selected, onChange }: { selected: string[]; onChange: (val: string[]) => void }) {
   return (
     <div className="flex flex-wrap gap-2">
-      {runTerrains.map((t) => (
-        <button
-          key={t.value}
-          type="button"
-          aria-pressed={selected?.includes(t.value)}
-          className={`n-toggle ${getTagColorClass(t.value)} px-3 py-1.5 flex items-center gap-2 text-xs font-bold transition-all rounded-full`}
-          onClick={() => onChange(toggleInArray(selected, t.value))}
-        >
-          <Icon icon={t.icon} className="text-base opacity-90" />
-          {t.label}
-        </button>
-      ))}
+      {runTerrains.map((t) => {
+        const isSelected = selected?.includes(t.value);
+        const tagClass = getTagColorClass(t.value);
+        return (
+          <button
+            key={t.value}
+            type="button"
+            aria-pressed={isSelected}
+            className={`n-tag transition-all ${isSelected
+              ? `${tagClass} opacity-100 scale-[1.02]`
+              : "opacity-40 hover:opacity-70"
+              }`}
+            onClick={() => onChange(toggleInArray(selected, t.value))}
+          >
+            <Icon icon={t.icon} className="text-base" />
+            {t.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -268,18 +271,25 @@ export function PhotoSkillControl({ skill, onChange }: { skill: string; onChange
 export function PhotoThemesControl({ selected, onChange }: { selected: string[]; onChange: (val: string[]) => void }) {
   return (
     <div className="flex flex-wrap gap-2">
-      {photoThemes.map((t) => (
-        <button
-          key={t.value}
-          type="button"
-          aria-pressed={selected?.includes(t.value)}
-          className={`n-toggle ${getTagColorClass(t.value)} px-3 py-1.5 flex items-center gap-2 text-xs font-bold transition-all rounded-full`}
-          onClick={() => onChange(toggleInArray(selected, t.value))}
-        >
-          <Icon icon={t.icon} className="text-base opacity-90" />
-          {t.label}
-        </button>
-      ))}
+      {photoThemes.map((t) => {
+        const isSelected = selected?.includes(t.value);
+        const tagClass = getTagColorClass(t.value);
+        return (
+          <button
+            key={t.value}
+            type="button"
+            aria-pressed={isSelected}
+            className={`n-tag transition-all ${isSelected
+              ? `${tagClass} opacity-100 scale-[1.02]`
+              : "opacity-40 hover:opacity-70"
+              }`}
+            onClick={() => onChange(toggleInArray(selected, t.value))}
+          >
+            <Icon icon={t.icon} className="text-base" />
+            {t.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -329,11 +339,11 @@ export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunCh
       const circle = new AMap.Circle({
         center: [location.longitude, location.latitude],
         radius: activeRadiusMeter,
-        strokeColor: "#525df3",
-        strokeOpacity: 0.8,
+        strokeColor: "#818cf8", // matching accent-indigo
+        strokeOpacity: 0.6,
         strokeWeight: 2,
-        fillColor: "#525df3",
-        fillOpacity: 0.1,
+        fillColor: "#818cf8",
+        fillOpacity: 0.08,
         strokeStyle: "dashed",
         strokeDasharray: [10, 10],
       });
@@ -408,16 +418,16 @@ export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunCh
           <div className="mt-auto pointer-events-auto flex items-center justify-center w-full">
             <div className="bg-surface/80 backdrop-blur-lg px-4 py-2 rounded-full border border-white/10 shadow-lg flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className={`w-2 h-2 rounded-full ${geoStatus === "detecting" ? "bg-accent-indigo animate-pulse" : "bg-accent-green"}`}></div>
-              <div className="text-[11px] font-bold text-primary tracking-tight truncate max-w-[200px]">
+              <div className="text-[12px] text-primary tracking-tight truncate max-w-[200px]">
                 {geoStatus === "detecting" ? "正在推算位置..." : (location.label || "观测区域已锁定")}
               </div>
-              <div className="h-3 w-px bg-white/10"></div>
+              <div className="h-3 w-px bg-neutral-500/30"></div>
               <button
                 type="button"
                 aria-label="重新获取我的位置"
                 onClick={onRelocate}
                 disabled={geoStatus === "detecting"}
-                className="bg-transparent border-0 p-0 text-[10px] font-bold text-tertiary hover:text-primary transition-colors disabled:opacity-30 disabled:cursor-not-allowed uppercase tracking-tighter cursor-pointer"
+                className="bg-transparent border-0 p-0 text-[12px] text-tertiary hover:text-primary transition-colors disabled:opacity-30 disabled:cursor-not-allowed uppercase tracking-tighter cursor-pointer"
               >
                 {geoStatus === "detecting" ? <Icon icon="lucide:refresh-cw" className="animate-spin text-xs" /> : "我的位置"}
               </button>
