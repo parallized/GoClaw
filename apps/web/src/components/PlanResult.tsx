@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import { Icon } from "@iconify/react";
 import type {
   PhotoWeekPlan,
   PlanExecutionStage,
@@ -94,35 +95,79 @@ export function ExecutionPanel({
     <section className="mb-12">
       <div className="flex flex-wrap items-center gap-4 justify-between mb-8">
         <h3 className="text-sm font-bold m-0 text-primary flex items-center gap-2 uppercase tracking-widest">
-          <span>📡</span> 执行状态
+          <Icon icon="lucide:loader-2" className={`${loading ? "animate-spin" : ""} text-accent-blue`} /> 执行状态
         </h3>
-        <div className="text-tertiary text-sm font-bold uppercase tracking-widest">
-          {loading ? "实时连接中…" : "任务已结束"}
+        <div className="text-tertiary text-[11px] font-bold uppercase tracking-widest bg-surface-gray px-3 py-1 rounded-full border border-edge">
+          {loading ? "实时连接中…" : "演算任务已结束"}
         </div>
       </div>
 
-      <div className="space-y-4">
+      <div className="relative space-y-2">
+        {/* Timeline Line */}
+        <div className="absolute left-[19px] top-4 bottom-4 w-[2px] bg-edge-light z-0"></div>
+
         {stages.map((stage, i) => {
           const status = stageStatuses[stage.id] ?? "pending";
+          const isActive = status === "running";
+          const isCompleted = status === "completed";
+          const isFailed = status === "failed";
+
           return (
             <motion.article
               key={stage.id}
-              initial={{ opacity: 0, x: -12 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.35, delay: i * 0.05, ease: [0.19, 1, 0.22, 1] }}
-              className={`rounded-xl p-6 transition-colors ${status === "running" ? "bg-accent-blue/10" : "bg-surface-gray"}`}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: i * 0.05, ease: [0.19, 1, 0.22, 1] }}
+              className={`relative z-10 flex items-start gap-5 p-4 rounded-xl transition-all duration-300 ${
+                isActive 
+                  ? "bg-accent-blue/[0.04] border border-accent-blue/10 shadow-[0_4px_12px_rgba(34,211,238,0.05)]" 
+                  : "bg-transparent border border-transparent"
+              }`}
             >
-              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                <div>
-                  <div className="font-bold text-primary">{stage.order + 1}. {stage.title}</div>
-                  {stage.detail && <p className="text-secondary text-sm leading-relaxed mt-2 mb-0">{stage.detail}</p>}
+              <div className="flex flex-col items-center shrink-0 mt-1">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-500 ${
+                  isActive 
+                    ? "bg-accent-blue text-white shadow-[0_0_12px_rgba(34,211,238,0.4)]" 
+                    : isCompleted 
+                      ? "bg-accent-green/20 text-accent-green" 
+                      : isFailed 
+                        ? "bg-error-bg text-error-text" 
+                        : "bg-surface-gray text-tertiary"
+                }`}>
+                  {isActive ? (
+                    <Icon icon="lucide:settings" className="animate-spin text-lg" />
+                  ) : isCompleted ? (
+                    <Icon icon="lucide:check" className="text-lg" />
+                  ) : isFailed ? (
+                    <Icon icon="lucide:alert-circle" className="text-lg" />
+                  ) : (
+                    <span className="text-[12px] font-bold">{stage.order + 1}</span>
+                  )}
                 </div>
-                <div className="text-right shrink-0">
-                  <div className={`text-sm font-bold uppercase tracking-widest ${status === "running" ? "text-accent-blue" : (status === "completed" ? "text-accent-green" : "text-tertiary")}`}>
+              </div>
+
+              <div className="flex-1 pt-1">
+                <div className="flex items-center justify-between gap-4 mb-1">
+                  <h4 className={`font-bold text-[15px] transition-colors ${isActive ? "text-primary" : "text-secondary"}`}>
+                    {stage.title}
+                  </h4>
+                  <div className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${
+                    isActive 
+                      ? "bg-accent-blue/10 text-accent-blue animate-pulse" 
+                      : isCompleted 
+                        ? "bg-accent-green/10 text-accent-green" 
+                        : isFailed 
+                          ? "bg-error-bg text-error-text" 
+                          : "bg-surface-gray text-tertiary"
+                  }`}>
                     {formatStageStatusLabel(status)}
-                    {status === "running" && <span className="inline-block ml-1 animate-pulse">…</span>}
                   </div>
                 </div>
+                {stage.detail && (
+                  <p className={`text-[13px] leading-relaxed transition-colors ${isActive ? "text-primary/70" : "text-tertiary"}`}>
+                    {stage.detail}
+                  </p>
+                )}
               </div>
             </motion.article>
           );
