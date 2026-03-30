@@ -13,6 +13,7 @@ import type {
 } from "@goclaw/contracts";
 import { PlanResultView, ExecutionPanel } from "./components/PlanResult";
 import { FormSection, TimeWindowControl, TerrainControl, PhotoThemesControl, PhotoSkillControl, getTagColorHex } from "./components/FormSection";
+import { NavigationStack, type CollectionState } from "./components/NavigationStack";
 import { ScenarioStep } from "./components/ScenarioStep";
 import { fetchScenarios, streamPlan } from "./lib/api";
 import { defaultPhotoForm, defaultRunForm, defaultScenarioId } from "./lib/constants";
@@ -38,6 +39,13 @@ function writeExecutionLogToConsole(entry: PlanExecutionLogEntry, stageTitle?: s
 }
 
 type AppStep = "scenario" | "form" | "execution" | "result";
+type OverlayPanel = "navigation" | "collection" | null;
+
+const defaultCollectionState: CollectionState = {
+  visitedNames: [],
+  devices: [],
+  preferredMode: "walk"
+};
 
 export function App() {
   const [scenarios, setScenarios] = useState<ScenarioManifest[]>([]);
@@ -49,6 +57,8 @@ export function App() {
   const [executionStageStatuses, setExecutionStageStatuses] = useState<Record<string, PlanExecutionStageStatus>>({});
   const [appStep, setAppStep] = useState<AppStep>("scenario");
   const [theme, setTheme] = useState<"light" | "dark" | "auto">("auto");
+  const [overlayPanel, setOverlayPanel] = useState<OverlayPanel>(null);
+  const [collection, setCollection] = useState<CollectionState>(defaultCollectionState);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -117,6 +127,17 @@ export function App() {
     () => scenarios.find((s) => s.id === scenarioId) ?? null,
     [scenarios, scenarioId]
   );
+
+  function handleReserve(plan: PlanResult) {
+    const names = plan.type === "run_tomorrow"
+      ? plan.routes.map((route) => route.name)
+      : plan.days.flatMap((day) => day.spots.map((spot) => spot.name));
+    setCollection((prev) => ({
+      ...prev,
+      visitedNames: [...new Set([...prev.visitedNames, ...names])]
+    }));
+    setOverlayPanel("navigation");
+  }
 
   async function handleSubmit() {
     abortControllerRef.current?.abort();
@@ -220,16 +241,18 @@ export function App() {
                 }}
               >
                 {/* 全局统一的左上角悬浮操作栏 */}
-                {isCurrent && step !== "scenario" && (
+                {isCurrent && (
                   <div className="absolute top-6 left-4 md:-left-16 z-50 flex flex-col gap-3 pointer-events-auto">
-                    <button
-                      type="button"
-                      onClick={() => { abortControllerRef.current?.abort(); setAppStep("scenario"); }}
-                      className="w-10 h-10 rounded-full bg-surface/80 backdrop-blur-xl hover:bg-surface-hover border border-white/10 flex items-center justify-center text-tertiary hover:text-primary transition-all cursor-pointer shadow-sm"
-                      aria-label="放弃当前并返回大厅"
-                    >
-                      <Icon icon="lucide:x" className="text-[18px]" />
-                    </button>
+                    {step !== "scenario" && (
+                      <button
+                        type="button"
+                        onClick={() => { abortControllerRef.current?.abort(); setAppStep("scenario"); }}
+                        className="w-10 h-10 rounded-full bg-surface/80 backdrop-blur-xl hover:bg-surface-hover border border-white/10 flex items-center justify-center text-tertiary hover:text-primary transition-all cursor-pointer shadow-sm"
+                        aria-label="放弃当前并返回大厅"
+                      >
+                        <Icon icon="lucide:x" className="text-[18px]" />
+                      </button>
+                    )}
 
                     <button
                       type="button"
@@ -239,13 +262,31 @@ export function App() {
                       }}
                       className="w-10 h-10 rounded-full bg-surface/80 backdrop-blur-xl hover:bg-surface-hover border border-white/10 flex items-center justify-center text-tertiary hover:text-primary transition-all cursor-pointer shadow-sm"
                       aria-label="切换日夜模式"
-                    >
-                      {theme === "dark" || (theme === "auto" && window.matchMedia("(prefers-color-scheme: dark)").matches) ? (
-                        <Icon icon="lucide:sun-medium" className="text-[18px]" />
+                      >
+                        {theme === "dark" || (theme === "auto" && window.matchMedia("(prefers-color-scheme: dark)").matches) ? (
+                          <Icon icon="lucide:sun-medium" className="text-[18px]" />
                       ) : (
                         <Icon icon="lucide:moon-star" className="text-[18px]" />
-                      )}
-                    </button>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setOverlayPanel((current) => current === "navigation" ? null : "navigation")}
+                        className="w-10 h-10 rounded-full bg-surface/80 backdrop-blur-xl hover:bg-surface-hover border border-white/10 flex items-center justify-center text-tertiary hover:text-primary transition-all cursor-pointer shadow-sm"
+                        aria-label="打开导航面板"
+                      >
+                        <Icon icon="lucide:map" className="text-[18px]" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setOverlayPanel((current) => current === "collection" ? null : "collection")}
+                        className="w-10 h-10 rounded-full bg-surface/80 backdrop-blur-xl hover:bg-surface-hover border border-white/10 flex items-center justify-center text-tertiary hover:text-primary transition-all cursor-pointer shadow-sm"
+                        aria-label="打开收藏面板"
+                      >
+                        <Icon icon="lucide:gallery-vertical-end" className="text-[18px]" />
+                      </button>
                   </div>
                 )}
                 <div className="relative shadow-[0_-16px_64px_rgba(0,0,0,0.3)] h-full flex flex-col w-full border-t border-l border-r border-b-0 border-white/5 bg-surface/80 backdrop-blur-3xl overflow-hidden rounded-t-lg md:rounded-t-xl rounded-b-none">
@@ -357,7 +398,7 @@ export function App() {
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.4, ease: [0.19, 1, 0.22, 1] }}
                       >
-                        {result ? <PlanResultView plan={result} /> : <div className="text-center text-secondary py-20">无结果数据</div>}
+                        {result ? <PlanResultView plan={result} onReserve={handleReserve} onOpenNavigation={() => setOverlayPanel("navigation")} /> : <div className="text-center text-secondary py-20">无结果数据</div>}
 
                         <div className="mt-auto pt-16 text-center">
                           <button
@@ -371,6 +412,16 @@ export function App() {
                     )}
                   </div>
                 </div>
+
+                <NavigationStack
+                  open={overlayPanel !== null}
+                  mode={overlayPanel ?? "navigation"}
+                  onClose={() => setOverlayPanel(null)}
+                  location={scenarioId === "run_tomorrow" ? runForm.location : photoForm.location}
+                  result={result}
+                  collection={collection}
+                  onCollectionChange={setCollection}
+                />
               </motion.div>
             );
           })}

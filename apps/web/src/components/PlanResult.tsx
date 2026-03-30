@@ -108,25 +108,42 @@ export function ExecutionPanel({
   );
 }
 
-function RunPlanView({ plan }: { plan: RunPlan }) {
+function RunPlanView({
+  plan,
+  onReserve,
+  onOpenNavigation
+}: {
+  plan: RunPlan;
+  onReserve?: (plan: PlanResult) => void;
+  onOpenNavigation?: () => void;
+}) {
   return (
     <motion.div className="space-y-12" {...fadeUp}>
       <header>
-        <div className="text-accent-green text-sm font-bold uppercase tracking-widest mb-4 flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-accent-green"></span> 最佳出发时间
+        <div className="result-badge animate-pulse mb-6">
+          <span className="w-1.5 h-1.5 rounded-full bg-accent-green animate-pulse"></span> 最佳出发时间
         </div>
-        <div className="text-5xl font-bold text-primary tracking-tight mb-6">{plan.bestTime}</div>
+        <div className="text-6xl font-bold text-primary tracking-tight mb-6">{plan.bestTime}</div>
         <p className="text-secondary text-lg leading-relaxed max-w-2xl">{plan.reason}</p>
         <div className="mt-8 flex flex-wrap gap-3">
           <span className="bg-surface-gray text-secondary px-4 py-2 rounded-lg text-sm font-bold uppercase tracking-widest">{plan.city}</span>
           <span className="bg-surface-gray text-secondary px-4 py-2 rounded-lg text-sm font-bold uppercase tracking-widest">{plan.targetDate}</span>
           <span className="bg-surface-gray text-secondary px-4 py-2 rounded-lg text-sm font-bold uppercase tracking-widest">{plan.weatherSummary}</span>
+          <span className="bg-surface-gray text-secondary px-4 py-2 rounded-lg text-sm font-bold uppercase tracking-widest">{plan.framedWindow.from}-{plan.framedWindow.to}</span>
+        </div>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <button type="button" onClick={() => onReserve?.(plan)} className="result-nav-link">
+            预约 <Icon icon="lucide:calendar-plus-2" className="text-sm" />
+          </button>
+          <button type="button" onClick={onOpenNavigation} className="result-nav-link">
+            打开导航 <Icon icon="lucide:map" className="text-sm" />
+          </button>
         </div>
       </header>
 
       <section>
-        <h3 className="mb-8 text-sm font-bold uppercase tracking-widest text-primary flex items-center gap-2">
-          <span>🗺️</span> 路线推荐
+        <h3 className="mb-8 text-sm font-semibold uppercase tracking-widest text-primary flex items-center gap-2 opacity-80">
+          <Icon icon="lucide:map" className="text-accent-blue" /> 路线推荐
         </h3>
         <div className="space-y-6">
           {plan.routes.map((route, idx) => (
@@ -135,25 +152,27 @@ function RunPlanView({ plan }: { plan: RunPlan }) {
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: idx * 0.06, ease: [0.19, 1, 0.22, 1] }}
-              className="bg-surface-gray p-8 rounded-2xl group"
+              className="result-card p-6 group"
             >
               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-6">
                 <div className="flex items-start gap-4">
-                  <span className="flex items-center justify-center w-8 h-8 shrink-0 rounded-lg bg-primary text-sm font-bold text-white border-none">{idx + 1}</span>
+                  <span className="result-index">{idx + 1}</span>
                   <div>
                     <span className="font-bold text-2xl text-primary block mb-3">{route.name}</span>
                     <div className="text-tertiary flex gap-6 text-sm font-bold uppercase tracking-widest">
                       <span className="flex items-center gap-1.5"><span>📏</span>{route.distanceKm} KM</span>
                       <span className="flex items-center gap-1.5"><span>⏱️</span>{route.estTimeMin} MIN</span>
+                      <span>{route.recommendedTime}</span>
+                      <span>{route.timeWindow.from}-{route.timeWindow.to}</span>
                     </div>
                   </div>
                 </div>
-                <a className="text-sm font-bold bg-tag-blue-bg text-tag-blue-text no-underline transition-all hover:bg-accent-blue hover:text-white px-4 py-2.5 rounded-lg uppercase tracking-widest flex items-center" href={route.navigationUrl} target="_blank" rel="noreferrer">
-                  立即导航 ↗
+                <a className="result-nav-link" href={route.navigationUrl} target="_blank" rel="noreferrer">
+                  预约 <Icon icon="lucide:arrow-up-right" className="text-sm" />
                 </a>
               </div>
 
-              <p className="text-secondary mt-6 text-base leading-relaxed">{route.why}</p>
+              <p className="text-secondary mt-6 text-base leading-relaxed opacity-80">{route.why}</p>
 
               {(route as any).highlights && (route as any).highlights.length > 0 && (
                 <div className="mt-6 flex flex-wrap gap-2">
@@ -168,8 +187,8 @@ function RunPlanView({ plan }: { plan: RunPlan }) {
       </section>
 
       {plan.tips && plan.tips.length > 0 && (
-        <section className="bg-surface-gray rounded-md p-8 border border-edge">
-          <h3 className="mb-6 text-sm font-bold uppercase tracking-widest text-primary flex items-center gap-2">
+        <section className="bg-surface-gray/20 rounded-2xl p-6 ring-1 ring-white/5">
+          <h3 className="mb-6 text-sm font-semibold uppercase tracking-widest text-primary flex items-center gap-2 opacity-80">
             <span>💡</span> 跑步贴士
           </h3>
           <ul className="list-none m-0 p-0 space-y-4">
@@ -187,7 +206,15 @@ function RunPlanView({ plan }: { plan: RunPlan }) {
   );
 }
 
-function PhotoWeekView({ plan }: { plan: PhotoWeekPlan }) {
+function PhotoWeekView({
+  plan,
+  onReserve,
+  onOpenNavigation
+}: {
+  plan: PhotoWeekPlan;
+  onReserve?: (plan: PlanResult) => void;
+  onOpenNavigation?: () => void;
+}) {
   return (
     <motion.div className="space-y-12" {...fadeUp}>
       <header>
@@ -196,6 +223,14 @@ function PhotoWeekView({ plan }: { plan: PhotoWeekPlan }) {
         </div>
         <div className="text-5xl font-bold text-primary tracking-tight mb-4">{plan.city}</div>
         <div className="text-tertiary text-sm font-bold uppercase tracking-widest">{plan.rangeLabel}</div>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <button type="button" onClick={() => onReserve?.(plan)} className="result-nav-link">
+            预约 <Icon icon="lucide:calendar-plus-2" className="text-sm" />
+          </button>
+          <button type="button" onClick={onOpenNavigation} className="result-nav-link">
+            打开导航 <Icon icon="lucide:map" className="text-sm" />
+          </button>
+        </div>
       </header>
 
       <div className="space-y-16">
@@ -245,8 +280,8 @@ function PhotoWeekView({ plan }: { plan: PhotoWeekPlan }) {
                       </div>
                     </div>
 
-                    <a className="text-sm font-bold bg-tag-pink-bg text-tag-pink-text no-underline transition-all hover:bg-accent-pink hover:text-white px-5 py-3 rounded-lg uppercase tracking-widest flex items-center" href={spot.navigationUrl} target="_blank" rel="noreferrer">
-                      查看路线 ↗
+                    <a className="result-nav-link" href={spot.navigationUrl} target="_blank" rel="noreferrer">
+                      查看路线 <Icon icon="lucide:arrow-up-right" className="text-sm" />
                     </a>
                   </div>
                 </article>
@@ -258,7 +293,7 @@ function PhotoWeekView({ plan }: { plan: PhotoWeekPlan }) {
 
       {plan.tips && plan.tips.length > 0 && (
         <section className="bg-surface-gray rounded-md p-8 border border-edge">
-          <h3 className="mb-6 text-sm font-bold uppercase tracking-widest text-primary flex items-center gap-2">
+          <h3 className="mb-6 text-sm font-semibold uppercase tracking-widest text-primary flex items-center gap-2 opacity-80">
             <span>📸</span> 全局贴士
           </h3>
           <ul className="list-none m-0 p-0 space-y-4">
@@ -277,13 +312,19 @@ function PhotoWeekView({ plan }: { plan: PhotoWeekPlan }) {
 }
 
 export function PlanResultView({
-  plan
+  plan,
+  onReserve,
+  onOpenNavigation
 }: {
   plan: PlanResult;
+  onReserve?: (plan: PlanResult) => void;
+  onOpenNavigation?: () => void;
 }) {
   return (
     <div className="space-y-12">
-      {plan.type === "run_tomorrow" ? <RunPlanView plan={plan} /> : <PhotoWeekView plan={plan} />}
+      {plan.type === "run_tomorrow"
+        ? <RunPlanView plan={plan} onReserve={onReserve} onOpenNavigation={onOpenNavigation} />
+        : <PhotoWeekView plan={plan} onReserve={onReserve} onOpenNavigation={onOpenNavigation} />}
     </div>
   );
 }

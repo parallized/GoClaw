@@ -216,3 +216,104 @@
   border-color: rgba(0, 0, 0, 0.15);
   color: #1e293b;
 }
+
+/* Result Card (Notion Elegant) */
+.result-card {
+  background-color: var(--color-surface-gray);
+  border-radius: 1rem;
+  overflow: hidden;
+  border: 1px solid var(--color-edge);
+  transition: all 0.4s cubic-bezier(0.19, 1, 0.22, 1);
+  position: relative;
+  height: 100%;
+}
+
+.result-card:hover {
+  border-color: var(--color-accent-blue);
+  background-color: var(--color-surface-hover);
+  transform: translateY(-2px);
+}
+
+.result-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background-color: rgba(16, 185, 129, 0.1);
+  color: var(--color-accent-green);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  transition: all 0.3s ease;
+}
+
+.result-index {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.5rem;
+  background-color: var(--color-surface-gray);
+  border: 1px solid var(--color-edge);
+  color: var(--color-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  transition: all 0.3s ease;
+}
+
+.result-card:hover .result-index {
+  border-color: var(--color-accent-blue);
+  color: var(--color-accent-blue);
+  background-color: var(--color-accent-blue/10);
+}
+
+.result-nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  text-decoration: none;
+  background-color: var(--color-surface-gray);
+  color: var(--color-secondary);
+  border: 1px solid var(--color-edge);
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.result-nav-link:hover {
+  background-color: var(--color-accent-blue);
+  color: white !important;
+  border-color: transparent;
+}
+
+button.result-nav-link {
+  cursor: pointer;
+}
+
+.map-tag--active {
+  border-color: rgba(34, 211, 238, 0.5);
+  color: #e2f7ff;
+}
+
+/* Light Mode specific for better contrast */
+:root.light .result-card {
+  background-color: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+:root.light .result-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+}
+
+:root.light .result-nav-link {
+  background-color: #f8fafc;
+}

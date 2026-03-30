@@ -112,6 +112,9 @@ describe("runTomorrowScenario - AI enhancement", () => {
     expect(result.tips.length).toBeGreaterThanOrEqual(1);
     expect(result.reason).toBeTruthy();
     expect(result.bestTime).toBeTruthy();
+    expect(result.framedWindow).toEqual({ from: "05:00", to: "21:00" });
+    expect(result.routes[0]?.recommendedTime).toBeTruthy();
+    expect(result.routes[0]?.timeWindow.from).toBeTruthy();
   });
 
   it("enhances plan with AI provider", async () => {
@@ -126,6 +129,8 @@ describe("runTomorrowScenario - AI enhancement", () => {
       generateText: async (input) => {
         expect(input.temperature).toBe(0.35);
         expect(input.system).toContain("跑步规划编辑");
+        expect(input.user).toContain("recommendedTime");
+        expect(input.user).toContain("timeWindow");
         return aiResponse;
       }
     };
@@ -144,6 +149,49 @@ describe("runTomorrowScenario - AI enhancement", () => {
     if (route) {
       expect(route.why).toBe("AI润色的路线原因");
     }
+  });
+
+  it("uses framed start window to constrain best time and route windows", async () => {
+    const context = makeContext(null);
+    const result = await runTomorrowScenario.plan(context, {
+      location: { latitude: 31.23, longitude: 121.47 },
+      timezone: "Asia/Shanghai",
+      preferences: {
+        startWindow: {
+          from: "08:00",
+          to: "10:00"
+        }
+      }
+    });
+
+    expect(result.framedWindow).toEqual({ from: "08:00", to: "10:00" });
+    expect(result.bestTime >= "08:00" && result.bestTime <= "10:00").toBe(true);
+    expect(result.routes.every((route) => route.recommendedTime >= "08:00" && route.recommendedTime <= "10:00")).toBe(true);
+    expect(result.routes.every((route) => route.timeWindow.from >= "08:00" && route.timeWindow.to <= "10:00")).toBe(true);
+  });
+
+  it("falls back when AI emits duplicated route reasons", async () => {
+    const aiResponse = JSON.stringify({
+      reason: "统一的推荐理由",
+      routes: [
+        { name: "世纪公园跑道", why: "统一的推荐理由" },
+        { name: "滨江步道", why: "统一的推荐理由" }
+      ],
+      tips: ["补水", "补水", "注意恢复"]
+    });
+
+    const aiProvider: AiProvider = {
+      name: "mock-ai",
+      generateText: async () => aiResponse
+    };
+
+    const result = await runTomorrowScenario.plan(makeContext(aiProvider), {
+      location: { latitude: 31.23, longitude: 121.47 },
+      timezone: "Asia/Shanghai"
+    });
+
+    expect(new Set(result.routes.map((route) => route.why)).size).toBe(result.routes.length);
+    expect(result.tips).toEqual(["补水", "注意恢复"]);
   });
 
   it("falls back gracefully when AI returns invalid JSON", async () => {

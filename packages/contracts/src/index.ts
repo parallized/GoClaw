@@ -2,6 +2,14 @@ import { z } from "zod";
 
 const timePattern = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
+export const timeWindowSchema = z.object({
+  from: z.string().regex(timePattern),
+  to: z.string().regex(timePattern)
+}).refine((window) => window.from <= window.to, {
+  message: "from must be less than or equal to to"
+});
+export type TimeWindow = z.infer<typeof timeWindowSchema>;
+
 export const scenarioIdSchema = z.enum(["run_tomorrow", "photo_week"]);
 export type ScenarioId = z.infer<typeof scenarioIdSchema>;
 
@@ -31,10 +39,7 @@ export const runPreferencesSchema = z.object({
   preferredDistanceKm: distanceRangeSchema.optional(),
   terrain: z.array(runTerrainSchema).optional(),
   avoidHighUv: z.boolean().optional(),
-  startWindow: z.object({
-    from: z.string().regex(timePattern),
-    to: z.string().regex(timePattern)
-  }).optional()
+  startWindow: timeWindowSchema.optional()
 });
 export type RunPreferences = z.infer<typeof runPreferencesSchema>;
 
@@ -63,6 +68,8 @@ export const runRouteSchema = z.object({
   name: z.string(),
   distanceKm: z.number().positive(),
   estTimeMin: z.number().int().positive(),
+  recommendedTime: z.string().regex(timePattern),
+  timeWindow: timeWindowSchema,
   why: z.string(),
   tags: z.array(z.string()),
   navigationUrl: z.string().url(),
@@ -141,6 +148,7 @@ export const runPlanSchema = z.object({
   targetDate: z.string(),
   weatherSummary: z.string(),
   bestTime: z.string(),
+  framedWindow: timeWindowSchema,
   reason: z.string(),
   routes: z.array(runRouteSchema).min(1),
   tips: z.array(z.string()).min(1),

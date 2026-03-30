@@ -8,6 +8,10 @@
     "types": [
       "node"
     ],
+    "baseUrl": ".",
+    "paths": {
+      "@lib/*": ["src/lib/*"]
+    },
     "outDir": "dist"
   },
   "include": [

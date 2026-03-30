@@ -1,6 +1,6 @@
 import type { Coordinates } from "@goclaw/contracts";
 import type { GeocodingProvider, PlaceSummary } from "../../domain/service-types";
-import { fetchJson } from "../../lib/http";
+import { fetchJson } from "@lib/http";
 import { logPlanExecution } from "../../lib/plan-execution";
 
 interface NominatimResponse {

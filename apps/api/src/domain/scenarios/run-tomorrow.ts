@@ -4,9 +4,11 @@ import {
   scenarioCatalog,
   type PlanProcessStep,
   type RunPlan,
-  type RunPlanRequest
+  type RunPlanRequest,
+  type RunRoute,
+  type TimeWindow
 } from "@goclaw/contracts";
-import type { PointOfInterest } from "../service-types";
+import type { HourlyWeatherPoint, PointOfInterest } from "../service-types";
 import type { ScenarioDefinition, ScenarioPlannerContext } from "../scenario-definition";
 import { extractJsonBlock, safeJsonParse } from "../../lib/json-parser";
 import { AppError, toErrorMessage } from "../../lib/errors";
@@ -20,6 +22,30 @@ const RUN_STAGE_IDS = {
   routing: "run.routing",
   ai: "run.ai"
 } as const;
+
+const DEFAULT_RUN_WINDOW: TimeWindow = {
+  from: "05:00",
+  to: "21:00"
+};
+
+type ScoredHour = {
+  hour: HourlyWeatherPoint;
+  score: number;
+};
+
+type ScheduledRouteSlot = {
+  recommendedTime: string;
+  timeWindow: TimeWindow;
+  hour: HourlyWeatherPoint;
+};
+
+type RoutedCandidate = {
+  poi: PointOfInterest;
+  distanceKm: number;
+  estTimeMin: number;
+  navigationUrl: string;
+  routeSource: string;
+};
 
 function manifest() {
   const found = scenarioCatalog.find((item) => item.id === "run_tomorrow");
@@ -46,24 +72,65 @@ function getTomorrowDate(timezone: string): string {
   return `${year}-${month}-${day}`;
 }
 
-function buildWeatherReason(hour: { temperatureC: number; precipitationProbability: number; uvIndex: number }): string {
-  return `体感 ${hour.temperatureC.toFixed(0)}℃、降水 ${hour.precipitationProbability.toFixed(0)}%、UV ${hour.uvIndex.toFixed(1)}，综合舒适度最佳。`;
+function timeToMinutes(time: string): number {
+  const parts = time.split(":").map((value) => Number(value));
+  const hour = parts[0] ?? 0;
+  const minute = parts[1] ?? 0;
+  return hour * 60 + minute;
 }
 
-function buildRouteWhy(poi: PointOfInterest, weatherLabel: string): string {
-  const summary = poi.terrains.includes("shaded")
-    ? "树荫覆盖更友好"
-    : poi.terrains.includes("track")
-      ? "路线节奏稳定、适合控配速"
-      : poi.terrains.includes("waterfront")
-        ? "沿水体更通风"
-        : "整体路况较平稳";
-
-  return `${summary}，并且 ${weatherLabel} 时段更适合这条路线。`;
+function minutesToTime(totalMinutes: number): string {
+  const clamped = Math.max(0, Math.min(totalMinutes, 23 * 60 + 59));
+  const hour = Math.floor(clamped / 60);
+  const minute = clamped % 60;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
-function buildTips(bestTime: string, temperatureMaxC: number, precipitationProbabilityMax: number, uvMax: number): string[] {
-  const tips = [`建议在 ${bestTime} 前后 15 分钟完成热身后再起跑。`];
+function isoToTime(time: string): string {
+  return time.split("T")[1] ?? "07:00";
+}
+
+function normalizeTimeWindow(startWindow?: TimeWindow): TimeWindow {
+  const from = startWindow?.from ?? DEFAULT_RUN_WINDOW.from;
+  const to = startWindow?.to ?? DEFAULT_RUN_WINDOW.to;
+  const normalized: TimeWindow = {
+    from: minutesToTime(Math.max(timeToMinutes(DEFAULT_RUN_WINDOW.from), timeToMinutes(from))),
+    to: minutesToTime(Math.min(timeToMinutes(DEFAULT_RUN_WINDOW.to), timeToMinutes(to)))
+  };
+
+  return normalized.from <= normalized.to ? normalized : DEFAULT_RUN_WINDOW;
+}
+
+function buildWeatherReason(hour: HourlyWeatherPoint, framedWindow: TimeWindow): string {
+  return `已在 ${framedWindow.from}-${framedWindow.to} 内筛过逐小时天气，${isoToTime(hour.time)} 前后体感 ${hour.apparentTemperatureC.toFixed(0)}℃、降水 ${hour.precipitationProbability.toFixed(0)}%、UV ${hour.uvIndex.toFixed(1)}，更适合作为明天的出发时段。`;
+}
+
+function buildRouteSummary(poi: PointOfInterest): string {
+  if (poi.terrains.includes("shaded")) {
+    return "树荫覆盖更稳定";
+  }
+
+  if (poi.terrains.includes("track")) {
+    return "节奏更整齐，适合控配速";
+  }
+
+  if (poi.terrains.includes("waterfront")) {
+    return "临水更通风，体感更轻松";
+  }
+
+  if (poi.terrains.includes("park")) {
+    return "公园内连续性更好，适合完整跑完一段";
+  }
+
+  return "整体路况更平稳，适合按计划完成行程";
+}
+
+function buildRouteWhy(poi: PointOfInterest, slot: ScheduledRouteSlot): string {
+  return `${buildRouteSummary(poi)}，建议 ${slot.recommendedTime} 出发，在 ${slot.timeWindow.from}-${slot.timeWindow.to} 完成；这个时段体感 ${slot.hour.apparentTemperatureC.toFixed(0)}℃、降水 ${slot.hour.precipitationProbability.toFixed(0)}%、UV ${slot.hour.uvIndex.toFixed(1)}。`;
+}
+
+function buildTips(bestTime: string, framedWindow: TimeWindow, temperatureMaxC: number, precipitationProbabilityMax: number, uvMax: number): string[] {
+  const tips = [`建议在 ${bestTime} 前后 15 分钟热身，并尽量在 ${framedWindow.to} 前完成主要行程。`];
 
   if (temperatureMaxC >= 25) {
     tips.push("明天气温偏高，建议随身带水并穿着透气浅色衣物。");
@@ -82,6 +149,103 @@ function buildTips(bestTime: string, temperatureMaxC: number, precipitationProba
   }
 
   return tips;
+}
+
+function buildRouteTimeWindow(recommendedTime: string, estTimeMin: number, framedWindow: TimeWindow): TimeWindow {
+  const framedStart = timeToMinutes(framedWindow.from);
+  const framedEnd = timeToMinutes(framedWindow.to);
+  const startMinutes = Math.max(framedStart, timeToMinutes(recommendedTime));
+  const endMinutes = Math.min(framedEnd, startMinutes + Math.max(30, estTimeMin));
+
+  if (endMinutes <= startMinutes) {
+    const fallbackStart = Math.max(framedStart, framedEnd - Math.max(30, estTimeMin));
+    return {
+      from: minutesToTime(fallbackStart),
+      to: framedWindow.to
+    };
+  }
+
+  return {
+    from: minutesToTime(startMinutes),
+    to: minutesToTime(endMinutes)
+  };
+}
+
+function normalizeCopy(text: string): string {
+  return text.replace(/[\s，。、“”‘’：:；;、,.!?！？（）()\-—]/g, "").toLowerCase();
+}
+
+function dedupeTextList(items: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const item of items) {
+    const trimmed = item.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    const normalized = normalizeCopy(trimmed);
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+
+    seen.add(normalized);
+    result.push(trimmed);
+  }
+
+  return result;
+}
+
+function chooseDistinctCopy(candidate: string | undefined, fallback: string, used: Set<string>): string {
+  const trimmed = candidate?.trim();
+  if (!trimmed) {
+    used.add(normalizeCopy(fallback));
+    return fallback;
+  }
+
+  const normalized = normalizeCopy(trimmed);
+  if (!normalized || normalized.length < 8 || used.has(normalized)) {
+    used.add(normalizeCopy(fallback));
+    return fallback;
+  }
+
+  used.add(normalized);
+  return trimmed;
+}
+
+function pickRouteSlot(route: RoutedCandidate, scoredHours: ScoredHour[], framedWindow: TimeWindow, usedTimes: Set<string>): ScheduledRouteSlot {
+  const framedEnd = timeToMinutes(framedWindow.to);
+  const fittingHours = scoredHours.filter(({ hour }) => timeToMinutes(isoToTime(hour.time)) + Math.max(30, route.estTimeMin) <= framedEnd);
+  const nextHour = fittingHours.find(({ hour }) => !usedTimes.has(isoToTime(hour.time)))
+    ?? fittingHours[0]
+    ?? scoredHours.find(({ hour }) => !usedTimes.has(isoToTime(hour.time)))
+    ?? scoredHours[0];
+
+  if (!nextHour) {
+    return {
+      recommendedTime: framedWindow.from,
+      timeWindow: buildRouteTimeWindow(framedWindow.from, route.estTimeMin, framedWindow),
+      hour: {
+        time: `1970-01-01T${framedWindow.from}`,
+        temperatureC: 20,
+        apparentTemperatureC: 20,
+        precipitationProbability: 0,
+        uvIndex: 0,
+        cloudCover: 20,
+        windSpeedKmh: 8
+      }
+    };
+  }
+
+  const recommendedTime = isoToTime(nextHour.hour.time);
+  usedTimes.add(recommendedTime);
+
+  return {
+    recommendedTime,
+    timeWindow: buildRouteTimeWindow(recommendedTime, route.estTimeMin, framedWindow),
+    hour: nextHour.hour
+  };
 }
 
 async function loadRunPois(context: ScenarioPlannerContext, input: RunPlanRequest): Promise<PointOfInterest[]> {
@@ -142,7 +306,7 @@ function buildRunProcessSteps(context: ScenarioPlannerContext, routeCount?: numb
       id: RUN_STAGE_IDS.ai,
       title: "综合推荐",
       detail: context.aiProvider
-        ? "正在根据你的偏好，对推荐路线做轻量优化"
+        ? "正在根据已确定的时间窗口和路线事实做轻量文案优化"
         : "当前未启用 AI 润色，直接返回基于真实数据生成的确定性结果。",
       provider: context.aiProvider?.name,
       outcome: context.aiProvider ? "success" : "skipped"
@@ -157,10 +321,25 @@ async function enhancePlan(context: ScenarioPlannerContext, plan: RunPlan): Prom
 
   try {
     const response = await context.aiProvider.generateText({
-      system: "你是跑步规划编辑。根据用户选择合适的地点，不得新增地点、数值、天气或路线。输出 JSON，字段仅包含 reason、routes、tips。",
+      system: [
+        "你是跑步规划编辑，只负责轻量润色已有事实。",
+        "不得新增、删除或改写地点、推荐时间、时间段、天气数值、路线距离、路线来源或标签。",
+        "总理由需要说明为何在给定时间框内选择这个出发点。",
+        "每条路线 why 必须保留自身角度，结合该路线的推荐时间与时间段，不能复述总理由，也不要让不同路线句式雷同。",
+        "输出 JSON，字段仅包含 reason、routes、tips；routes 内仅包含 name 和 why。"
+      ].join(""),
       user: JSON.stringify({
+        framedWindow: plan.framedWindow,
+        bestTime: plan.bestTime,
+        weatherSummary: plan.weatherSummary,
         reason: plan.reason,
-        routes: plan.routes.map((route) => ({ name: route.name, why: route.why })),
+        routes: plan.routes.map((route) => ({
+          name: route.name,
+          recommendedTime: route.recommendedTime,
+          timeWindow: route.timeWindow,
+          why: route.why,
+          tags: route.tags
+        })),
         tips: plan.tips
       }),
       temperature: 0.35
@@ -172,14 +351,31 @@ async function enhancePlan(context: ScenarioPlannerContext, plan: RunPlan): Prom
       return plan;
     }
 
+    const usedCopies = new Set<string>();
+    const reason = chooseDistinctCopy(parsed.reason, plan.reason, usedCopies);
+    const routes = plan.routes.map((route) => {
+      const aiWhy = parsed.routes?.find((item) => item.name === route.name)?.why;
+      return {
+        ...route,
+        why: chooseDistinctCopy(aiWhy, route.why, usedCopies)
+      };
+    });
+    const tips = dedupeTextList(parsed.tips?.filter(Boolean) ?? plan.tips).slice(0, 4);
+
+    const changed = reason !== plan.reason
+      || routes.some((route, index) => route.why !== plan.routes[index]?.why)
+      || tips.length !== plan.tips.length
+      || tips.some((tip, index) => tip !== plan.tips[index]);
+
+    if (!changed) {
+      return plan;
+    }
+
     return {
       ...plan,
-      reason: parsed.reason?.trim() || plan.reason,
-      routes: plan.routes.map((route) => ({
-        ...route,
-        why: parsed.routes?.find((item) => item.name === route.name)?.why?.trim() || route.why
-      })),
-      tips: parsed.tips?.filter(Boolean).slice(0, 4) ?? plan.tips,
+      reason,
+      routes,
+      tips: tips.length > 0 ? tips : plan.tips,
       meta: {
         ...plan.meta,
         aiEnhanced: true
@@ -213,39 +409,36 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
           throw new AppError("天气服务未返回明天的天气数据", 502);
         }
 
-        const candidateHours = forecast.hourly
+        const framedWindow = normalizeTimeWindow(input.preferences?.startWindow);
+        const scoredHours = forecast.hourly
           .filter((hour) => hour.time.startsWith(targetDay.date))
           .filter((hour) => {
-            const time = hour.time.split("T")[1] ?? "00:00";
-            if (time < "05:00" || time > "21:00") {
-              return false;
-            }
-
-            const startWindow = input.preferences?.startWindow;
-            return startWindow ? time >= startWindow.from && time <= startWindow.to : true;
-          });
-
-        logPlanExecution("info", `天气评估阶段筛出 ${candidateHours.length} 个可跑步时间点`);
-
-        const bestHour = candidateHours
+            const time = isoToTime(hour.time);
+            return time >= framedWindow.from && time <= framedWindow.to;
+          })
           .map((hour) => ({
             hour,
             score: scoreRunHour(hour) - ((input.preferences?.avoidHighUv ?? true) ? hour.uvIndex * 4 : 0)
           }))
-          .sort((left, right) => right.score - left.score)[0]?.hour;
+          .sort((left, right) => right.score - left.score);
 
+        logPlanExecution("info", `天气评估阶段在 ${framedWindow.from}-${framedWindow.to} 内筛出 ${scoredHours.length} 个可跑步时间点`);
+
+        const bestHour = scoredHours[0]?.hour;
         if (!bestHour) {
           logPlanExecution("error", "当前天气和偏好条件下未能推导出合适的跑步时间窗口");
           throw new AppError("未能推导出适合跑步的时间窗口，请调整偏好后重试。", 400);
         }
 
         const weatherLabel = summarizeDailyWeather(targetDay);
-        logPlanExecution("info", `最佳时段评估完成：${bestHour.time.split("T")[1] ?? "07:00"}，天气 ${weatherLabel}`);
+        logPlanExecution("info", `最佳时段评估完成：${isoToTime(bestHour.time)}，天气 ${weatherLabel}`);
 
         return {
           forecast,
           targetDay,
           bestHour,
+          framedWindow,
+          scoredHours,
           weatherLabel
         };
       }),
@@ -273,7 +466,7 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
     const preferredCenter = (preferredMin + preferredMax) / 2;
     const paceMinPerKm = input.preferences?.paceMinPerKm ?? 6.5;
     const preferredTerrains = new Set(input.preferences?.terrain ?? []);
-    const selectedRoutes = await withExecutionStage(RUN_STAGE_IDS.routing, async () => {
+    const routedCandidates = await withExecutionStage(RUN_STAGE_IDS.routing, async () => {
       const candidatePois = pois.slice(0, 10);
       logPlanExecution("info", `开始为 ${candidatePois.length} 个候选地点计算步行往返路线`);
 
@@ -292,9 +485,10 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
 
             return {
               poi,
-              route,
               distanceKm,
               estTimeMin,
+              navigationUrl: context.navigationProvider.buildNavigationUrl(poi.coordinates, poi.name),
+              routeSource: route.source,
               score: distanceScore + terrainScore - poi.distanceMeters / 700
             };
           } catch (error) {
@@ -311,15 +505,12 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
         .filter((item) => item.distanceKm >= Math.max(1.5, preferredMin * 0.7) && item.distanceKm <= preferredMax * 1.5)
         .sort((left, right) => right.score - left.score)
         .slice(0, 3)
-        .map((item) => ({
-          name: item.poi.name,
+        .map<RoutedCandidate>((item) => ({
+          poi: item.poi,
           distanceKm: item.distanceKm,
           estTimeMin: item.estTimeMin,
-          why: buildRouteWhy(item.poi, weatherData.weatherLabel),
-          tags: item.poi.terrains,
-          navigationUrl: context.navigationProvider.buildNavigationUrl(item.poi.coordinates, item.poi.name),
-          routeSource: item.route.source,
-          poiCoordinates: item.poi.coordinates
+          navigationUrl: item.navigationUrl,
+          routeSource: item.routeSource
         }));
 
       if (routes.length === 0) {
@@ -336,16 +527,36 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
       return routes;
     });
 
+    const usedTimes = new Set<string>();
+    const selectedRoutes: RunRoute[] = routedCandidates.map((route) => {
+      const slot = pickRouteSlot(route, weatherData.scoredHours, weatherData.framedWindow, usedTimes);
+      return {
+        name: route.poi.name,
+        distanceKm: route.distanceKm,
+        estTimeMin: route.estTimeMin,
+        recommendedTime: slot.recommendedTime,
+        timeWindow: slot.timeWindow,
+        why: buildRouteWhy(route.poi, slot),
+        tags: route.poi.terrains,
+        navigationUrl: route.navigationUrl,
+        routeSource: route.routeSource,
+        poiCoordinates: route.poi.coordinates
+      };
+    });
+
+    const bestTime = isoToTime(weatherData.bestHour.time);
     const basePlan: RunPlan = {
       type: "run_tomorrow",
       city: place.city,
       targetDate: weatherData.targetDay.date,
       weatherSummary: weatherData.weatherLabel,
-      bestTime: weatherData.bestHour.time.split("T")[1] ?? "07:00",
-      reason: buildWeatherReason(weatherData.bestHour),
+      bestTime,
+      framedWindow: weatherData.framedWindow,
+      reason: buildWeatherReason(weatherData.bestHour, weatherData.framedWindow),
       routes: selectedRoutes,
       tips: buildTips(
-        weatherData.bestHour.time.split("T")[1] ?? "07:00",
+        bestTime,
+        weatherData.framedWindow,
         weatherData.targetDay.temperatureMaxC,
         weatherData.targetDay.precipitationProbabilityMax,
         weatherData.targetDay.uvIndexMax
