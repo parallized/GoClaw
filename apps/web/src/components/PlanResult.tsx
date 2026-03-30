@@ -103,8 +103,6 @@ export function ExecutionPanel({
       </div>
 
       <div className="relative space-y-1">
-        {/* Timeline Line */}
-        <div className="execution-timeline-line"></div>
 
         {stages.map((stage, i) => {
           const status = stageStatuses[stage.id] ?? "pending";
