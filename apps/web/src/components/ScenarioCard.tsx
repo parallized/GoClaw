@@ -12,7 +12,7 @@ export function ScenarioCard({ scenario, onSelect }: ScenarioCardProps) {
     <motion.button
       type="button"
       onClick={() => onSelect(scenario.id)}
-      className="n-glass-card n-scenario-card p-8 flex flex-col h-full w-full text-left relative overflow-hidden group"
+      className="relative bg-surface backdrop-blur-[24px] border border-edge rounded-2xl overflow-hidden cursor-pointer border-none bg-surface-gray shadow-[0_2px_8px_rgba(0,0,0,0.3),0_8px_32px_rgba(0,0,0,0.2),inset_0_1px_0_rgba(255,255,255,0.04)] before:content-[''] before:absolute before:inset-0 before:pointer-events-none before:bg-[linear-gradient(135deg,rgba(255,255,255,0.03),transparent_50%,rgba(255,255,255,0.01))] p-8 flex flex-col h-full w-full text-left overflow-hidden group"
       initial={{ opacity: 0, scale: 0.98 }}
       animate={{ opacity: 1, scale: 1 }}
       whileHover={{ y: -8, scale: 1.015 }}

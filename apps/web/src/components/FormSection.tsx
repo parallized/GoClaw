@@ -208,7 +208,7 @@ export function TerrainControl({ selected, onChange }: { selected: string[]; onC
           <button
             key={t.value}
             type="button"
-            className={`n-tag transition-all ${tagClass} hover:brightness-110`}
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold border border-solid border-edge opacity-60 transition-all ${tagClass} hover:brightness-110`}
             onClick={() => onChange(toggleInArray(selected, t.value))}
           >
             <Icon icon={t.icon} className="text-base" />
@@ -272,7 +272,7 @@ export function PhotoThemesControl({ selected, onChange }: { selected: string[];
           <button
             key={t.value}
             type="button"
-            className={`n-tag transition-all ${tagClass} hover:brightness-110`}
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold border border-solid border-edge opacity-60 transition-all ${tagClass} hover:brightness-110`}
             onClick={() => onChange(toggleInArray(selected, t.value))}
           >
             <Icon icon={t.icon} className="text-base" />

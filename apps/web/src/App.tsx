@@ -265,77 +265,77 @@ export function App() {
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.35, ease: [0.19, 1, 0.22, 1] }}
                       >
-                      <form
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          void handleSubmit();
-                        }}
-                        className="flex flex-col flex-1 h-full"
-                      >
-                        <div className="flex flex-col h-full w-full max-w-5xl mx-auto px-4 sm:px-6">
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            void handleSubmit();
+                          }}
+                          className="flex flex-col flex-1 h-full"
+                        >
+                          <div className="flex flex-col h-full w-full max-w-5xl mx-auto px-4 sm:px-6">
 
-                          {/* Header Area */}
-                          <div className="w-full flex flex-col mb-4 z-10 shrink-0 text-center sm:text-left">
-                            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-primary leading-tight mb-2">
-                              {scenarios.find(s => s.id === scenarioId)?.title || "高级规划设定"}
-                            </h1>
-                            <p className="text-secondary text-[14px] leading-relaxed mb-4 max-w-2xl sm:mx-0 mx-auto">
-                              打算去哪，或者只是走走？
-                            </p>
+                            {/* Header Area */}
+                            <div className="w-full flex flex-col mb-4 z-10 shrink-0 text-center sm:text-left">
+                              <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-primary leading-tight mb-2">
+                                {scenarios.find(s => s.id === scenarioId)?.title || "高级规划设定"}
+                              </h1>
+                              <p className="text-secondary text-[14px] leading-relaxed mb-4 max-w-2xl sm:mx-0 mx-auto">
+                                打算去哪，或者只是走走？
+                              </p>
 
-                            <div className="flex flex-col sm:flex-row items-end sm:items-center gap-4 w-full">
-                              <button type="submit" disabled={loading} className="n-btn-primary w-full sm:w-fit flex items-center justify-center gap-2">
-                                {loading ? "正在推演..." : "生成规划"}
-                              </button>
+                              <div className="flex flex-col sm:flex-row items-end sm:items-center gap-4 w-full">
+                                <button type="submit" disabled={loading} className="flex items-center justify-center gap-2 px-8 py-3 text-sm font-bold bg-primary hover:opacity-90 rounded-xl transition-all shadow-lg w-full sm:w-fit border border-transparent hover:scale-[1.02] active:scale-95 shrink-0" style={{ color: "var(--color-base-bg)" }}>
+                                  {loading ? "正在推演..." : "生成规划"}
+                                </button>
 
-                              <div className="flex-1 w-full sm:w-auto animate-in fade-in slide-in-from-left-4 duration-700 delay-100">
+                                <div className="flex-1 w-full sm:w-auto animate-in fade-in slide-in-from-left-4 duration-700 delay-100">
+                                  {scenarioId === "run_tomorrow" ? (
+                                    <TimeWindowControl
+                                      from={runForm.preferences?.startWindow?.from ?? "06:00"}
+                                      to={runForm.preferences?.startWindow?.to ?? "10:00"}
+                                      colors={runForm.preferences?.terrain?.map(getTagColorHex) ?? []}
+                                      onChange={(from, to) => setRunForm({ ...runForm, preferences: { ...runForm.preferences!, startWindow: { from, to } } })}
+                                    />
+                                  ) : (
+                                    <PhotoSkillControl
+                                      skill={photoForm.preferences?.cameraSkill ?? "beginner"}
+                                      onChange={(val) => setPhotoForm({ ...photoForm, preferences: { ...photoForm.preferences, cameraSkill: val } })}
+                                    />
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="mt-4 flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200">
                                 {scenarioId === "run_tomorrow" ? (
-                                  <TimeWindowControl
-                                    from={runForm.preferences?.startWindow?.from ?? "06:00"}
-                                    to={runForm.preferences?.startWindow?.to ?? "10:00"}
-                                    colors={runForm.preferences?.terrain?.map(getTagColorHex) ?? []}
-                                    onChange={(from, to) => setRunForm({ ...runForm, preferences: { ...runForm.preferences!, startWindow: { from, to } } })}
+                                  <TerrainControl
+                                    selected={runForm.preferences?.terrain ?? []}
+                                    onChange={(val) => setRunForm({ ...runForm, preferences: { ...runForm.preferences, terrain: val as any } })}
                                   />
                                 ) : (
-                                  <PhotoSkillControl
-                                    skill={photoForm.preferences?.cameraSkill ?? "beginner"}
-                                    onChange={(val) => setPhotoForm({ ...photoForm, preferences: { ...photoForm.preferences, cameraSkill: val } })}
+                                  <PhotoThemesControl
+                                    selected={photoForm.preferences?.themes ?? []}
+                                    onChange={(val) => setPhotoForm({ ...photoForm, preferences: { ...photoForm.preferences, themes: val as any } })}
                                   />
                                 )}
                               </div>
                             </div>
 
-                            <div className="mt-4 flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200">
-                              {scenarioId === "run_tomorrow" ? (
-                                <TerrainControl
-                                  selected={runForm.preferences?.terrain ?? []}
-                                  onChange={(val) => setRunForm({ ...runForm, preferences: { ...runForm.preferences, terrain: val as any } })}
-                                />
-                              ) : (
-                                <PhotoThemesControl
-                                  selected={photoForm.preferences?.themes ?? []}
-                                  onChange={(val) => setPhotoForm({ ...photoForm, preferences: { ...photoForm.preferences, themes: val as any } })}
-                                />
-                              )}
+                            {/* Map Container Area */}
+                            <div className="flex-1 w-full min-h-[500px] h-full relative z-0 mb-6 sm:mb-8">
+                              <FormSection
+                                scenarioId={scenarioId}
+                                themeMode={isDark ? "dark" : "light"}
+                                runForm={runForm}
+                                photoForm={photoForm}
+                                onRunChange={setRunForm}
+                                onPhotoChange={setPhotoForm}
+                                geoStatus={geoStatus}
+                                onRelocate={handleDetectLocation}
+                              />
                             </div>
-                          </div>
 
-                          {/* Map Container Area */}
-                          <div className="flex-1 w-full min-h-[500px] h-full relative z-0 mb-6 sm:mb-8">
-                            <FormSection
-                              scenarioId={scenarioId}
-                              themeMode={isDark ? "dark" : "light"}
-                              runForm={runForm}
-                              photoForm={photoForm}
-                              onRunChange={setRunForm}
-                              onPhotoChange={setPhotoForm}
-                              geoStatus={geoStatus}
-                              onRelocate={handleDetectLocation}
-                            />
                           </div>
-
-                        </div>
-                      </form>
+                        </form>
                       </motion.div>
                     )}
 
@@ -362,7 +362,7 @@ export function App() {
                         <div className="mt-auto pt-16 text-center">
                           <button
                             onClick={() => { setAppStep("scenario"); setResult(null); }}
-                            className="n-btn-ghost"
+                            className="bg-surface/50 hover:bg-surface border border-white/10 px-8 py-3 text-sm font-bold text-primary transition-all uppercase tracking-[0.2em] shadow-sm hover:shadow-md cursor-pointer rounded-lg"
                           >
                             ↺ 重新规划
                           </button>
