@@ -4,7 +4,6 @@ import type {
   PhotoWeekPlan,
   PlanExecutionStage,
   PlanExecutionStageStatus,
-  PlanMeta,
   PlanResult,
   RunPlan
 } from "@goclaw/contracts";
@@ -14,17 +13,6 @@ const fadeUp = {
   animate: { opacity: 1, y: 0 },
   transition: { duration: 0.2, ease: "circOut" } as any,
 };
-
-function formatOutcomeLabel(outcome: PlanMeta["process"][number]["outcome"]): string {
-  switch (outcome) {
-    case "fallback":
-      return "已回退自动规划";
-    case "skipped":
-      return "无缝跳过";
-    default:
-      return "精细规划完成";
-  }
-}
 
 function formatStageStatusLabel(status: PlanExecutionStageStatus): string {
   switch (status) {
@@ -39,43 +27,6 @@ function formatStageStatusLabel(status: PlanExecutionStageStatus): string {
     default:
       return "等待中";
   }
-}
-
-function ProcessView({ meta }: { meta: PlanMeta }) {
-  return (
-    <section className="mt-12">
-      <div className="flex flex-wrap items-center gap-4 justify-between mb-8">
-        <h3 className="text-sm font-bold m-0 text-primary flex items-center gap-2 uppercase tracking-widest">
-          <span>🧠</span> 演算逻辑
-        </h3>
-        <div className="text-tertiary text-sm font-bold uppercase tracking-widest flex flex-wrap gap-3">
-          <span>天气: {meta.weatherProvider}</span>
-          <span>地点: {meta.poiProvider}</span>
-          <span>路线: {meta.routingProvider}</span>
-          {meta.aiEnhanced && <span className="text-accent-blue">AI 深度增强</span>}
-        </div>
-      </div>
-
-      <div className="space-y-6">
-        {meta.process.map((step, idx) => (
-          <article key={`${step.title}-${idx}`} className="flex items-start gap-5">
-            <div className="w-8 h-8 rounded-full bg-surface-gray flex items-center justify-center shrink-0 font-bold text-tertiary text-sm border-none">
-              {idx + 1}
-            </div>
-            <div className="flex-1 pb-6 border-none">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
-                <div className="font-bold text-primary">{step.title}</div>
-                <div className={`text-sm font-bold px-3 py-1 rounded uppercase tracking-widest ${step.outcome === "success" ? "bg-tag-green-bg text-tag-green-text" : "bg-tag-orange-bg text-tag-orange-text"}`}>
-                  {formatOutcomeLabel(step.outcome)}
-                </div>
-              </div>
-              <p className="text-secondary text-sm leading-relaxed mb-0">{step.detail}</p>
-            </div>
-          </article>
-        ))}
-      </div>
-    </section>
-  );
 }
 
 export function ExecutionPanel({
@@ -232,7 +183,6 @@ function RunPlanView({ plan }: { plan: RunPlan }) {
         </section>
       )}
 
-      <ProcessView meta={plan.meta} />
     </motion.div>
   );
 }
@@ -322,7 +272,6 @@ function PhotoWeekView({ plan }: { plan: PhotoWeekPlan }) {
         </section>
       )}
 
-      <ProcessView meta={plan.meta} />
     </motion.div>
   );
 }
