@@ -111,21 +111,21 @@ function buildRunProcessSteps(context: ScenarioPlannerContext, routeCount?: numb
     {
       id: RUN_STAGE_IDS.weather,
       title: "天气评估",
-      detail: "拉取未来 7 天逐小时天气，筛选出明天最适合出发的时间窗口。",
+      detail: "正在帮你看天气预报，筛选出最适合出发的时间窗口",
       provider: context.weatherProvider.name,
       outcome: "success"
     },
     {
       id: RUN_STAGE_IDS.geocoding,
       title: "位置识别",
-      detail: "根据当前坐标解析城市与区域，用于结果命名和地点提示。",
+      detail: "根据当前坐标解析城市与区域",
       provider: context.geocodingProvider.name,
       outcome: "success"
     },
     {
       id: RUN_STAGE_IDS.poi,
       title: "跑步地点筛选",
-      detail: "基于真实 POI 搜索周边公园、绿道和跑道，并按距离与地形做候选排序。",
+      detail: "正为你寻找周边游玩位置和路线",
       provider: context.poiProvider.name,
       outcome: "success"
     },
@@ -140,9 +140,9 @@ function buildRunProcessSteps(context: ScenarioPlannerContext, routeCount?: numb
     },
     {
       id: RUN_STAGE_IDS.ai,
-      title: "文案润色",
+      title: "综合推荐",
       detail: context.aiProvider
-        ? "在不新增事实的前提下，对推荐理由和注意事项做轻量润色。"
+        ? "正在根据你的偏好，对推荐路线做轻量优化"
         : "当前未启用 AI 润色，直接返回基于真实数据生成的确定性结果。",
       provider: context.aiProvider?.name,
       outcome: context.aiProvider ? "success" : "skipped"
@@ -157,7 +157,7 @@ async function enhancePlan(context: ScenarioPlannerContext, plan: RunPlan): Prom
 
   try {
     const response = await context.aiProvider.generateText({
-      system: "你是专业跑步规划编辑。你只能润色现有事实，不得新增地点、数值、天气或路线。输出 JSON，字段仅包含 reason、routes、tips。",
+      system: "你是跑步规划编辑。根据用户选择合适的地点，不得新增地点、数值、天气或路线。输出 JSON，字段仅包含 reason、routes、tips。",
       user: JSON.stringify({
         reason: plan.reason,
         routes: plan.routes.map((route) => ({ name: route.name, why: route.why })),

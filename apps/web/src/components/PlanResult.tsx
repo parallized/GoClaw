@@ -102,9 +102,9 @@ export function ExecutionPanel({
         </div>
       </div>
 
-      <div className="relative space-y-2">
+      <div className="relative space-y-1">
         {/* Timeline Line */}
-        <div className="absolute left-[19px] top-4 bottom-4 w-[2px] bg-edge-light z-0"></div>
+        <div className="execution-timeline-line"></div>
 
         {stages.map((stage, i) => {
           const status = stageStatuses[stage.id] ?? "pending";
@@ -115,56 +115,38 @@ export function ExecutionPanel({
           return (
             <motion.article
               key={stage.id}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: i * 0.05, ease: [0.19, 1, 0.22, 1] }}
-              className={`relative z-10 flex items-start gap-5 p-4 rounded-xl transition-all duration-300 ${
-                isActive 
-                  ? "bg-accent-blue/[0.04] border border-accent-blue/10 shadow-[0_4px_12px_rgba(34,211,238,0.05)]" 
-                  : "bg-transparent border border-transparent"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.3, delay: i * 0.05 }}
+              className={`execution-item z-10 flex items-start gap-4 p-3 ${
+                isActive ? "execution-item--active" : isCompleted ? "execution-item--completed" : ""
               }`}
             >
-              <div className="flex flex-col items-center shrink-0 mt-1">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-500 ${
-                  isActive 
-                    ? "bg-accent-blue text-white shadow-[0_0_12px_rgba(34,211,238,0.4)]" 
-                    : isCompleted 
-                      ? "bg-accent-green/20 text-accent-green" 
-                      : isFailed 
-                        ? "bg-error-bg text-error-text" 
-                        : "bg-surface-gray text-tertiary"
-                }`}>
+              <div className="flex flex-col items-center shrink-0 mt-0.5">
+                <div className="execution-dot">
                   {isActive ? (
-                    <Icon icon="lucide:settings" className="animate-spin text-lg" />
+                    <Icon icon="svg-spinners:ring-resize" className="text-base" />
                   ) : isCompleted ? (
-                    <Icon icon="lucide:check" className="text-lg" />
+                    <Icon icon="lucide:check-circle-2" className="text-base" />
                   ) : isFailed ? (
-                    <Icon icon="lucide:alert-circle" className="text-lg" />
+                    <Icon icon="lucide:alert-circle" className="text-base" />
                   ) : (
-                    <span className="text-[12px] font-bold">{stage.order + 1}</span>
+                    <span className="text-[11px] font-medium opacity-50">{stage.order + 1}</span>
                   )}
                 </div>
               </div>
 
-              <div className="flex-1 pt-1">
-                <div className="flex items-center justify-between gap-4 mb-1">
-                  <h4 className={`font-bold text-[15px] transition-colors ${isActive ? "text-primary" : "text-secondary"}`}>
+              <div className="flex-1">
+                <div className="flex items-center justify-between gap-4 mb-0.5">
+                  <h4 className={`font-semibold text-[14px] transition-colors ${isActive ? "text-primary" : "text-secondary"}`}>
                     {stage.title}
                   </h4>
-                  <div className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${
-                    isActive 
-                      ? "bg-accent-blue/10 text-accent-blue animate-pulse" 
-                      : isCompleted 
-                        ? "bg-accent-green/10 text-accent-green" 
-                        : isFailed 
-                          ? "bg-error-bg text-error-text" 
-                          : "bg-surface-gray text-tertiary"
-                  }`}>
+                  <div className="execution-badge">
                     {formatStageStatusLabel(status)}
                   </div>
                 </div>
                 {stage.detail && (
-                  <p className={`text-[13px] leading-relaxed transition-colors ${isActive ? "text-primary/70" : "text-tertiary"}`}>
+                  <p className="text-[13px] text-tertiary leading-relaxed">
                     {stage.detail}
                   </p>
                 )}

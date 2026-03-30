@@ -126,3 +126,103 @@
   border-color: rgba(0, 0, 0, 0.15);
   color: #1e293b;
 }
+
+/* Execution Status Panel (Notion Elegant Style) */
+.execution-item {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  transition: background-color 0.2s ease;
+  margin-left: 12px;
+}
+
+.execution-item:hover {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+:root.light .execution-item:hover {
+  background-color: rgba(0, 0, 0, 0.02);
+}
+
+.execution-item--active {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+:root.light .execution-item--active {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+
+.execution-dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  background-color: transparent;
+  color: var(--color-tertiary);
+  font-size: 14px;
+}
+
+.execution-item--active .execution-dot {
+  color: var(--color-accent-blue);
+  background-color: transparent;
+  box-shadow: none;
+}
+
+.execution-item--completed .execution-dot {
+  color: var(--color-accent-green);
+  background-color: transparent;
+}
+
+.execution-badge {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background-color: rgba(255, 255, 255, 0.05);
+  color: var(--color-tertiary);
+  transition: all 0.3s ease;
+}
+
+:root.light .execution-badge {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+
+.execution-item--active .execution-badge {
+  background-color: rgba(34, 211, 238, 0.1);
+  color: #22d3ee;
+}
+
+:root.light .execution-item--active .execution-badge {
+  background-color: rgba(59, 130, 246, 0.08);
+  color: #2563eb;
+}
+
+.execution-item--completed .execution-badge {
+  background-color: rgba(16, 185, 129, 0.08);
+  color: #10b981;
+}
+
+/* Timeline specific */
+.execution-timeline-line {
+  position: absolute;
+  left: 31px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background-color: var(--color-edge);
+  opacity: 0.5;
+}
+:root.light .map-tag {
+  background-color: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.1);
+  color: #64748b;
+}
+
+:root.light .map-tag:hover {
+  background-color: rgba(0, 0, 0, 0.08);
+  border-color: rgba(0, 0, 0, 0.15);
+  color: #1e293b;
+}
