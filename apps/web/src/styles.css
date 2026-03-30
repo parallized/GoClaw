@@ -41,12 +41,12 @@
     --color-edge: rgba(255, 255, 255, 0.06);
     --color-edge-light: rgba(255, 255, 255, 0.03);
 
-    /* Global Brand Accents — cyan/teal shift */
-    --color-accent-blue: #22d3ee;
+    /* Global Brand Accents — cyan/indigo contrast */
+    --color-accent-blue: #22d3ee; /* bright cyan */
     --color-accent-orange: #fbbf24;
     --color-accent-green: #4ade80;
     --color-accent-pink: #f472b6;
-    --color-accent-indigo: #67e8f9;
+    --color-accent-indigo: #818cf8; /* soft purple/indigo */
 
     --color-error-bg: rgba(239, 68, 68, 0.1);
     --color-error-border: rgba(239, 68, 68, 0.25);
@@ -66,12 +66,12 @@
   --color-edge: rgba(255, 255, 255, 0.06);
   --color-edge-light: rgba(255, 255, 255, 0.03);
 
-  /* Global Brand Accents — cyan/teal shift */
+  /* Global Brand Accents — cyan/indigo contrast */
   --color-accent-blue: #22d3ee;
   --color-accent-orange: #fbbf24;
   --color-accent-green: #4ade80;
   --color-accent-pink: #f472b6;
-  --color-accent-indigo: #67e8f9;
+  --color-accent-indigo: #818cf8;
 
   /* Specific Map Tag Palette (Inky/Muted) */
   --color-tag-inky-cyan: #217069;

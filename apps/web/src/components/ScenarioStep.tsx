@@ -17,8 +17,8 @@ export function ScenarioStep({ scenarios, onSelect }: ScenarioStepProps) {
       transition={{ duration: 0.5, ease: [0.19, 1, 0.22, 1] }}
     >
       <header className="mb-4 pt-12">
-        <h1 className="text-4xl sm:text-5xl font-semibold leading-tight tracking-tight mb-4 flex items-center gap-4">
-          <span className="bg-gradient-to-br from-accent-indigo to-accent-blue bg-clip-text text-transparent">GoClaw</span>
+        <h1 className="text-4xl sm:text-5xl font-bold leading-tight tracking-tight mb-4 flex items-center gap-4">
+          <span className="bg-gradient-to-br from-accent-indigo via-accent-indigo to-accent-blue bg-clip-text text-transparent drop-shadow-sm">GoClaw</span>
         </h1>
         <p className="text-secondary text-[16px] leading-relaxed font-medium">
           让 AI 告诉你今天该去哪玩
