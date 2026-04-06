@@ -1,12 +1,15 @@
-import { motion } from "framer-motion";
+﻿import { motion } from "framer-motion";
 import { Icon } from "@iconify/react";
 import type {
+  PhotoSpot,
   PhotoWeekPlan,
   PlanExecutionStage,
   PlanExecutionStageStatus,
   PlanResult,
+  RunRoute,
   RunPlan
 } from "@goclaw/contracts";
+import type { ReservationTarget } from "./NavigationStack";
 
 const fadeUp = {
   initial: { opacity: 0, y: 12 },
@@ -54,7 +57,6 @@ export function ExecutionPanel({
       </div>
 
       <div className="relative space-y-1">
-
         {stages.map((stage, i) => {
           const status = stageStatuses[stage.id] ?? "pending";
           const isActive = status === "running";
@@ -108,6 +110,8 @@ export function ExecutionPanel({
   );
 }
 
+type ResultActionHandler = (target?: ReservationTarget) => void;
+
 function RunPlanView({
   plan,
   onReserve,
@@ -115,7 +119,7 @@ function RunPlanView({
 }: {
   plan: RunPlan;
   onReserve?: (plan: PlanResult) => void;
-  onOpenNavigation?: () => void;
+  onOpenNavigation?: ResultActionHandler;
 }) {
   return (
     <motion.div className="space-y-12" {...fadeUp}>
@@ -133,10 +137,10 @@ function RunPlanView({
         </div>
         <div className="mt-6 flex flex-wrap gap-3">
           <button type="button" onClick={() => onReserve?.(plan)} className="result-nav-link">
-            预约 <Icon icon="lucide:calendar-plus-2" className="text-sm" />
+            加入收藏 <Icon icon="lucide:bookmark-plus" className="text-sm" />
           </button>
-          <button type="button" onClick={onOpenNavigation} className="result-nav-link">
-            打开导航 <Icon icon="lucide:map" className="text-sm" />
+          <button type="button" onClick={() => onOpenNavigation?.()} className="result-nav-link">
+            内部导航 <Icon icon="lucide:map" className="text-sm" />
           </button>
         </div>
       </header>
@@ -167,9 +171,14 @@ function RunPlanView({
                     </div>
                   </div>
                 </div>
-                <a className="result-nav-link" href={route.navigationUrl} target="_blank" rel="noreferrer">
-                  预约 <Icon icon="lucide:arrow-up-right" className="text-sm" />
-                </a>
+                <div className="flex flex-wrap items-center gap-3">
+                  <button type="button" className="result-nav-link" onClick={() => onOpenNavigation?.(toReservationTarget(route))}>
+                    内部导航 <Icon icon="lucide:map" className="text-sm" />
+                  </button>
+                  <a className="result-nav-link" href={route.navigationUrl} target="_blank" rel="noreferrer">
+                    外部导航 <Icon icon="lucide:arrow-up-right" className="text-sm" />
+                  </a>
+                </div>
               </div>
 
               <p className="text-secondary mt-6 text-base leading-relaxed opacity-80">{route.why}</p>
@@ -201,7 +210,6 @@ function RunPlanView({
           </ul>
         </section>
       )}
-
     </motion.div>
   );
 }
@@ -213,7 +221,7 @@ function PhotoWeekView({
 }: {
   plan: PhotoWeekPlan;
   onReserve?: (plan: PlanResult) => void;
-  onOpenNavigation?: () => void;
+  onOpenNavigation?: ResultActionHandler;
 }) {
   return (
     <motion.div className="space-y-12" {...fadeUp}>
@@ -225,10 +233,10 @@ function PhotoWeekView({
         <div className="text-tertiary text-sm font-bold uppercase tracking-widest">{plan.rangeLabel}</div>
         <div className="mt-6 flex flex-wrap gap-3">
           <button type="button" onClick={() => onReserve?.(plan)} className="result-nav-link">
-            预约 <Icon icon="lucide:calendar-plus-2" className="text-sm" />
+            加入收藏 <Icon icon="lucide:bookmark-plus" className="text-sm" />
           </button>
-          <button type="button" onClick={onOpenNavigation} className="result-nav-link">
-            打开导航 <Icon icon="lucide:map" className="text-sm" />
+          <button type="button" onClick={() => onOpenNavigation?.()} className="result-nav-link">
+            内部导航 <Icon icon="lucide:map" className="text-sm" />
           </button>
         </div>
       </header>
@@ -280,9 +288,14 @@ function PhotoWeekView({
                       </div>
                     </div>
 
-                    <a className="result-nav-link" href={spot.navigationUrl} target="_blank" rel="noreferrer">
-                      查看路线 <Icon icon="lucide:arrow-up-right" className="text-sm" />
-                    </a>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button type="button" className="result-nav-link" onClick={() => onOpenNavigation?.(toReservationTarget(spot))}>
+                        内部导航 <Icon icon="lucide:map" className="text-sm" />
+                      </button>
+                      <a className="result-nav-link" href={spot.navigationUrl} target="_blank" rel="noreferrer">
+                        外部导航 <Icon icon="lucide:arrow-up-right" className="text-sm" />
+                      </a>
+                    </div>
                   </div>
                 </article>
               ))}
@@ -306,7 +319,6 @@ function PhotoWeekView({
           </ul>
         </section>
       )}
-
     </motion.div>
   );
 }
@@ -318,7 +330,7 @@ export function PlanResultView({
 }: {
   plan: PlanResult;
   onReserve?: (plan: PlanResult) => void;
-  onOpenNavigation?: () => void;
+  onOpenNavigation?: ResultActionHandler;
 }) {
   return (
     <div className="space-y-12">
@@ -327,4 +339,11 @@ export function PlanResultView({
         : <PhotoWeekView plan={plan} onReserve={onReserve} onOpenNavigation={onOpenNavigation} />}
     </div>
   );
+}
+
+function toReservationTarget(item: RunRoute | PhotoSpot): ReservationTarget {
+  return {
+    name: item.name,
+    source: "timeWindow" in item ? "run" : "photo"
+  };
 }

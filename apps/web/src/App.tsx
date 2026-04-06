@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { Icon } from "@iconify/react";
 import type {
   PhotoWeekRequest,
@@ -13,7 +13,7 @@ import type {
 } from "@goclaw/contracts";
 import { PlanResultView, ExecutionPanel } from "./components/PlanResult";
 import { FormSection, TimeWindowControl, TerrainControl, PhotoThemesControl, PhotoSkillControl, getTagColorHex } from "./components/FormSection";
-import { NavigationStack, type CollectionState } from "./components/NavigationStack";
+import { NavigationStack, type CollectionState, type ReservationTarget } from "./components/NavigationStack";
 import { ScenarioStep } from "./components/ScenarioStep";
 import { fetchScenarios, streamPlan } from "./lib/api";
 import { defaultPhotoForm, defaultRunForm, defaultScenarioId } from "./lib/constants";
@@ -39,7 +39,10 @@ function writeExecutionLogToConsole(entry: PlanExecutionLogEntry, stageTitle?: s
 }
 
 type AppStep = "scenario" | "form" | "execution" | "result";
-type OverlayPanel = "navigation" | "collection" | null;
+type OverlayPanelState = {
+  mode: "navigation" | "collection";
+  target: ReservationTarget | null;
+} | null;
 
 const defaultCollectionState: CollectionState = {
   visitedNames: [],
@@ -57,7 +60,7 @@ export function App() {
   const [executionStageStatuses, setExecutionStageStatuses] = useState<Record<string, PlanExecutionStageStatus>>({});
   const [appStep, setAppStep] = useState<AppStep>("scenario");
   const [theme, setTheme] = useState<"light" | "dark" | "auto">("auto");
-  const [overlayPanel, setOverlayPanel] = useState<OverlayPanel>(null);
+  const [overlayPanel, setOverlayPanel] = useState<OverlayPanelState>(null);
   const [collection, setCollection] = useState<CollectionState>(defaultCollectionState);
 
   useEffect(() => {
@@ -128,6 +131,14 @@ export function App() {
     [scenarios, scenarioId]
   );
 
+  function closeOverlayPanel() {
+    setOverlayPanel(null);
+  }
+
+  function openOverlayPanel(mode: "navigation" | "collection", target: ReservationTarget | null = null) {
+    setOverlayPanel({ mode, target: mode === "navigation" ? target : null });
+  }
+
   function handleReserve(plan: PlanResult) {
     const names = plan.type === "run_tomorrow"
       ? plan.routes.map((route) => route.name)
@@ -136,7 +147,11 @@ export function App() {
       ...prev,
       visitedNames: [...new Set([...prev.visitedNames, ...names])]
     }));
-    setOverlayPanel("navigation");
+    openOverlayPanel("collection");
+  }
+
+  function handleOpenNavigation(target?: ReservationTarget) {
+    openOverlayPanel("navigation", target ?? null);
   }
 
   async function handleSubmit() {
@@ -150,6 +165,7 @@ export function App() {
     setExecutionStages([]);
     setExecutionStageStatuses({});
     setAppStep("execution");
+    closeOverlayPanel();
     executionStageTitleRef.current = {};
 
     try {
@@ -270,23 +286,27 @@ export function App() {
                         )}
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={() => setOverlayPanel((current) => current === "navigation" ? null : "navigation")}
-                        className="w-10 h-10 rounded-full bg-surface/80 backdrop-blur-xl hover:bg-surface-hover border border-white/10 flex items-center justify-center text-tertiary hover:text-primary transition-all cursor-pointer shadow-sm"
-                        aria-label="打开导航面板"
-                      >
-                        <Icon icon="lucide:map" className="text-[18px]" />
-                      </button>
+                      {step === "result" && result ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => overlayPanel?.mode === "navigation" ? closeOverlayPanel() : openOverlayPanel("navigation")}
+                            className="w-10 h-10 rounded-full bg-surface/80 backdrop-blur-xl hover:bg-surface-hover border border-white/10 flex items-center justify-center text-tertiary hover:text-primary transition-all cursor-pointer shadow-sm"
+                            aria-label="打开导航页面"
+                          >
+                            <Icon icon="lucide:map" className="text-[18px]" />
+                          </button>
 
-                      <button
-                        type="button"
-                        onClick={() => setOverlayPanel((current) => current === "collection" ? null : "collection")}
-                        className="w-10 h-10 rounded-full bg-surface/80 backdrop-blur-xl hover:bg-surface-hover border border-white/10 flex items-center justify-center text-tertiary hover:text-primary transition-all cursor-pointer shadow-sm"
-                        aria-label="打开收藏面板"
-                      >
-                        <Icon icon="lucide:gallery-vertical-end" className="text-[18px]" />
-                      </button>
+                          <button
+                            type="button"
+                            onClick={() => overlayPanel?.mode === "collection" ? closeOverlayPanel() : openOverlayPanel("collection")}
+                            className="w-10 h-10 rounded-full bg-surface/80 backdrop-blur-xl hover:bg-surface-hover border border-white/10 flex items-center justify-center text-tertiary hover:text-primary transition-all cursor-pointer shadow-sm"
+                            aria-label="打开收藏页面"
+                          >
+                            <Icon icon="lucide:gallery-vertical-end" className="text-[18px]" />
+                          </button>
+                        </>
+                      ) : null}
                   </div>
                 )}
                 <div className="relative shadow-[0_-16px_64px_rgba(0,0,0,0.3)] h-full flex flex-col w-full border-t border-l border-r border-b-0 border-white/5 bg-surface/80 backdrop-blur-3xl overflow-hidden rounded-t-lg md:rounded-t-xl rounded-b-none">
@@ -393,35 +413,74 @@ export function App() {
 
                     {step === "result" && (
                       <motion.div
-                        className="flex-1 flex flex-col h-full"
+                        className="relative flex-1 min-h-0"
                         initial={{ opacity: 0, y: 12 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.4, ease: [0.19, 1, 0.22, 1] }}
                       >
-                        {result ? <PlanResultView plan={result} onReserve={handleReserve} onOpenNavigation={() => setOverlayPanel("navigation")} /> : <div className="text-center text-secondary py-20">无结果数据</div>}
+                        <motion.div
+                          className="flex h-full min-h-0 flex-col"
+                          animate={{
+                            scale: overlayPanel ? 0.982 : 1,
+                            y: overlayPanel ? -18 : 0,
+                            opacity: overlayPanel ? 0.72 : 1
+                          }}
+                          transition={{ type: "spring", stiffness: 320, damping: 32 }}
+                          style={{ pointerEvents: overlayPanel ? "none" : "auto" }}
+                        >
+                          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1">
+                            {result ? (
+                              <PlanResultView
+                                plan={result}
+                                onReserve={handleReserve}
+                                onOpenNavigation={handleOpenNavigation}
+                              />
+                            ) : (
+                              <div className="text-center text-secondary py-20">无结果数据</div>
+                            )}
+                          </div>
 
-                        <div className="mt-auto pt-16 text-center">
-                          <button
-                            onClick={() => { setAppStep("scenario"); setResult(null); }}
-                            className="bg-surface/50 hover:bg-surface border border-white/10 px-8 py-3 text-sm font-bold text-primary transition-all uppercase tracking-[0.2em] shadow-sm hover:shadow-md cursor-pointer rounded-lg"
-                          >
-                            ↺ 重新规划
-                          </button>
-                        </div>
+                          <div className="mt-auto pt-16 text-center shrink-0">
+                            <button
+                              onClick={() => {
+                                closeOverlayPanel();
+                                setAppStep("scenario");
+                                setResult(null);
+                              }}
+                              className="bg-surface/50 hover:bg-surface border border-white/10 px-8 py-3 text-sm font-bold text-primary transition-all uppercase tracking-[0.2em] shadow-sm hover:shadow-md cursor-pointer rounded-lg"
+                            >
+                              ↺ 重新规划
+                            </button>
+                          </div>
+                        </motion.div>
+
+                        <AnimatePresence>
+                          {overlayPanel ? (
+                            <motion.div
+                              key={`${overlayPanel.mode}:${overlayPanel.target?.name ?? "default"}`}
+                              initial={{ opacity: 0, y: 40, scale: 0.985 }}
+                              animate={{ opacity: 1, y: 0, scale: 1 }}
+                              exit={{ opacity: 0, y: 28, scale: 0.99 }}
+                              transition={{ duration: 0.28, ease: [0.19, 1, 0.22, 1] }}
+                              className="absolute inset-0 z-20"
+                            >
+                              <NavigationStack
+                                open={true}
+                                mode={overlayPanel.mode}
+                                target={overlayPanel.target}
+                                onClose={closeOverlayPanel}
+                                location={scenarioId === "run_tomorrow" ? runForm.location : photoForm.location}
+                                result={result}
+                                collection={collection}
+                                onCollectionChange={setCollection}
+                              />
+                            </motion.div>
+                          ) : null}
+                        </AnimatePresence>
                       </motion.div>
                     )}
                   </div>
                 </div>
-
-                <NavigationStack
-                  open={overlayPanel !== null}
-                  mode={overlayPanel ?? "navigation"}
-                  onClose={() => setOverlayPanel(null)}
-                  location={scenarioId === "run_tomorrow" ? runForm.location : photoForm.location}
-                  result={result}
-                  collection={collection}
-                  onCollectionChange={setCollection}
-                />
               </motion.div>
             );
           })}
