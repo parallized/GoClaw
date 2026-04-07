@@ -29,8 +29,8 @@ function makeHourly(date: string, time: string) {
   };
 }
 
-function makeRunPoi(id: string, name: string): PointOfInterest {
-  return {
+function makeRunPoi(id: string, name: string, overrides: Partial<PointOfInterest> = {}): PointOfInterest {
+  const base: PointOfInterest = {
     id,
     name,
     coordinates: { latitude: 31.23, longitude: 121.47 },
@@ -40,6 +40,16 @@ function makeRunPoi(id: string, name: string): PointOfInterest {
     themes: [],
     terrains: ["track"],
     rawTags: {}
+  };
+
+  return {
+    ...base,
+    ...overrides,
+    coordinates: overrides.coordinates ?? base.coordinates,
+    tags: overrides.tags ?? base.tags,
+    themes: overrides.themes ?? base.themes,
+    terrains: overrides.terrains ?? base.terrains,
+    rawTags: overrides.rawTags ?? base.rawTags
   };
 }
 
@@ -249,6 +259,76 @@ describe("runTomorrowScenario - AI enhancement", () => {
     for (const route of result.routes) {
       expect(route.why).toBeTruthy();
     }
+  });
+
+  it("prioritizes mileage-fit POIs before routing instead of only taking the nearest results", async () => {
+    const forecast = makeForecast();
+    const nearbyPois = Array.from({ length: 10 }, (_, index) => makeRunPoi(`n${index + 1}`, `附近口袋公园${index + 1}`, {
+      coordinates: { latitude: 31.23 + index * 0.001, longitude: 121.47 + index * 0.001 },
+      distanceMeters: 300 + index * 120,
+      terrains: ["park"]
+    }));
+    const preferredPois = [
+      makeRunPoi("fit-1", "江边长线绿道", {
+        coordinates: { latitude: 31.28, longitude: 121.58 },
+        distanceMeters: 3600,
+        terrains: ["waterfront", "park"]
+      }),
+      makeRunPoi("fit-2", "城市环形跑道", {
+        coordinates: { latitude: 31.29, longitude: 121.59 },
+        distanceMeters: 4300,
+        terrains: ["track", "park"]
+      })
+    ];
+    const walkingDistanceByLongitude = new Map<number, number>([
+      [121.58, 4300],
+      [121.59, 4800]
+    ]);
+
+    const context: ScenarioPlannerContext = {
+      weatherProvider: {
+        name: "mock-weather",
+        getForecast: async () => forecast
+      },
+      geocodingProvider: {
+        name: "mock-geo",
+        reverseGeocode: async () => ({ city: "上海", displayName: "上海市" })
+      },
+      poiProvider: {
+        name: "mock-poi",
+        searchRunPois: async () => [...nearbyPois, ...preferredPois],
+        searchPhotoPois: async () => []
+      },
+      routingProvider: {
+        name: "mock-routing",
+        getWalkingRoute: async (_from, to) => ({
+          distanceMeters: walkingDistanceByLongitude.get(to.longitude) ?? 900,
+          durationSeconds: 1800,
+          source: "mock"
+        })
+      },
+      navigationProvider: {
+        name: "mock-nav",
+        buildNavigationUrl: (coords, label) => `https://nav.test/${label}`
+      },
+      aiProvider: null
+    };
+
+    const result = await runTomorrowScenario.plan(context, {
+      location: { latitude: 31.23, longitude: 121.47 },
+      timezone: "Asia/Shanghai",
+      preferences: {
+        preferredDistanceKm: {
+          min: 8,
+          max: 10
+        }
+      }
+    });
+
+    const routeNames = result.routes.map((route) => route.name);
+    expect(routeNames).toContain("江边长线绿道");
+    expect(routeNames).toContain("城市环形跑道");
+    expect(result.routes.every((route) => route.distanceKm >= 8)).toBe(true);
   });
 
   it("falls back to primary POIs when expanded POI lookup fails", async () => {

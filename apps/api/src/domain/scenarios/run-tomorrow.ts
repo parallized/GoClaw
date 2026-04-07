@@ -47,6 +47,18 @@ type RoutedCandidate = {
   routeSource: string;
 };
 
+type RunDistanceProfile = {
+  preferredMinKm: number;
+  preferredMaxKm: number;
+  preferredCenterKm: number;
+  routeFilterMinKm: number;
+  routeFilterMaxKm: number;
+  poiMinMeters: number;
+  poiMaxMeters: number;
+  poiTargetMeters: number;
+  searchRadii: number[];
+};
+
 function manifest() {
   const found = scenarioCatalog.find((item) => item.id === "run_tomorrow");
   if (!found) {
@@ -171,8 +183,117 @@ function buildRouteTimeWindow(recommendedTime: string, estTimeMin: number, frame
   };
 }
 
+function formatKilometers(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, "");
+}
+
+function clampSearchRadius(radiusMeters: number, maxRadius = 15_000): number {
+  return Math.min(maxRadius, Math.max(2_500, Math.round(radiusMeters / 100) * 100));
+}
+
+function buildRunDistanceProfile(input: RunPlanRequest): RunDistanceProfile {
+  const preferredMinKm = input.preferences?.preferredDistanceKm?.min ?? 4;
+  const preferredMaxKm = input.preferences?.preferredDistanceKm?.max ?? 8;
+  const preferredCenterKm = (preferredMinKm + preferredMaxKm) / 2;
+  const oneWayMinMeters = preferredMinKm * 500;
+  const oneWayMaxMeters = preferredMaxKm * 500;
+  const poiMinMeters = Math.max(500, Math.round(oneWayMinMeters * 0.75));
+  const poiMaxMeters = Math.max(poiMinMeters + 500, Math.round(oneWayMaxMeters * 1.1));
+  const baseRadius = clampSearchRadius(poiMaxMeters + 1_500, 11_000);
+  const expandedRadius = clampSearchRadius(Math.max(baseRadius + 2_500, poiMaxMeters + 3_500), 13_000);
+  const fallbackRadius = clampSearchRadius(Math.max(expandedRadius + 2_000, poiMaxMeters + 5_500));
+
+  return {
+    preferredMinKm,
+    preferredMaxKm,
+    preferredCenterKm,
+    routeFilterMinKm: Math.max(1.5, preferredMinKm * 0.7),
+    routeFilterMaxKm: preferredMaxKm * 1.5,
+    poiMinMeters,
+    poiMaxMeters,
+    poiTargetMeters: Math.round((poiMinMeters + poiMaxMeters) / 2),
+    searchRadii: [...new Set([baseRadius, expandedRadius, fallbackRadius])]
+  };
+}
+
+function distanceToRange(value: number, min: number, max: number): number {
+  if (value < min) {
+    return min - value;
+  }
+
+  if (value > max) {
+    return value - max;
+  }
+
+  return 0;
+}
+
 function normalizeCopy(text: string): string {
   return text.replace(/[\s，。、“”‘’：:；;、,.!?！？（）()\-—]/g, "").toLowerCase();
+}
+
+function buildPoiKey(poi: PointOfInterest): string {
+  return `${poi.id}:${normalizeCopy(poi.name)}:${poi.coordinates.latitude.toFixed(5)}:${poi.coordinates.longitude.toFixed(5)}`;
+}
+
+function countTerrainMatches(poi: PointOfInterest, preferredTerrains: ReadonlySet<string>): number {
+  if (preferredTerrains.size === 0) {
+    return 0;
+  }
+
+  return poi.terrains.filter((terrain) => preferredTerrains.has(terrain)).length;
+}
+
+function comparePoisByPreference(
+  left: PointOfInterest,
+  right: PointOfInterest,
+  profile: RunDistanceProfile,
+  preferredTerrains: ReadonlySet<string>
+): number {
+  const leftBandGap = distanceToRange(left.distanceMeters, profile.poiMinMeters, profile.poiMaxMeters);
+  const rightBandGap = distanceToRange(right.distanceMeters, profile.poiMinMeters, profile.poiMaxMeters);
+  if (leftBandGap !== rightBandGap) {
+    return leftBandGap - rightBandGap;
+  }
+
+  const leftTerrainMatches = countTerrainMatches(left, preferredTerrains);
+  const rightTerrainMatches = countTerrainMatches(right, preferredTerrains);
+  if (leftTerrainMatches !== rightTerrainMatches) {
+    return rightTerrainMatches - leftTerrainMatches;
+  }
+
+  const leftTargetGap = Math.abs(left.distanceMeters - profile.poiTargetMeters);
+  const rightTargetGap = Math.abs(right.distanceMeters - profile.poiTargetMeters);
+  if (leftTargetGap !== rightTargetGap) {
+    return leftTargetGap - rightTargetGap;
+  }
+
+  return left.distanceMeters - right.distanceMeters;
+}
+
+function prioritizeRunPoisByPreference(
+  pois: readonly PointOfInterest[],
+  profile: RunDistanceProfile,
+  preferredTerrains: ReadonlySet<string>
+): PointOfInterest[] {
+  const deduped: PointOfInterest[] = [];
+  const seen = new Set<string>();
+
+  for (const poi of pois) {
+    const key = buildPoiKey(poi);
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    deduped.push(poi);
+  }
+
+  return deduped.sort((left, right) => comparePoisByPreference(left, right, profile, preferredTerrains));
+}
+
+function countMileageMatchedPois(pois: readonly PointOfInterest[], profile: RunDistanceProfile): number {
+  return pois.filter((poi) => distanceToRange(poi.distanceMeters, profile.poiMinMeters, profile.poiMaxMeters) === 0).length;
 }
 
 function dedupeTextList(items: string[]): string[] {
@@ -248,26 +369,48 @@ function pickRouteSlot(route: RoutedCandidate, scoredHours: ScoredHour[], framed
   };
 }
 
-async function loadRunPois(context: ScenarioPlannerContext, input: RunPlanRequest): Promise<PointOfInterest[]> {
-  const maxDistanceKm = input.preferences?.preferredDistanceKm?.max ?? 8;
-  const primaryRadius = Math.min(9000, Math.max(2500, Math.round(maxDistanceKm * 750)));
-  logPlanExecution("info", `按 ${primaryRadius} 米半径搜索跑步地点候选`);
-  const primary = await context.poiProvider.searchRunPois(input.location, primaryRadius);
-  if (primary.length >= 3) {
-    logPlanExecution("info", `首轮搜索已获得 ${primary.length} 个候选地点`);
-    return primary;
+async function loadRunPois(
+  context: ScenarioPlannerContext,
+  input: RunPlanRequest,
+  profile: RunDistanceProfile,
+  preferredTerrains: ReadonlySet<string>
+): Promise<PointOfInterest[]> {
+  let ranked: PointOfInterest[] = [];
+
+  for (const [index, radius] of profile.searchRadii.entries()) {
+    try {
+      if (index === 0) {
+        logPlanExecution(
+          "info",
+          `按里程偏好 ${formatKilometers(profile.preferredMinKm)}-${formatKilometers(profile.preferredMaxKm)} km 搜索约 ${radius} 米范围内的跑步地点`
+        );
+      } else {
+        logPlanExecution(
+          "info",
+          `当前候选与 ${formatKilometers(profile.preferredMinKm)}-${formatKilometers(profile.preferredMaxKm)} km 里程偏好的匹配不足，扩展到 ${radius} 米继续搜索`
+        );
+      }
+
+      const resolved = await context.poiProvider.searchRunPois(input.location, radius);
+      ranked = prioritizeRunPoisByPreference([...ranked, ...resolved], profile, preferredTerrains);
+
+      const matchedCount = countMileageMatchedPois(ranked, profile);
+      logPlanExecution("info", `累计获得 ${ranked.length} 个候选地点，其中 ${matchedCount} 个更贴近当前里程偏好`);
+
+      if (matchedCount >= 3 || (matchedCount > 0 && ranked.length >= 10)) {
+        return ranked;
+      }
+    } catch (error) {
+      if (index === 0) {
+        throw error;
+      }
+
+      logPlanExecution("warn", "扩圈搜索失败，回退为上一轮已获得的跑步地点结果", toErrorMessage(error));
+      return ranked;
+    }
   }
 
-  try {
-    const expandedRadius = Math.min(primaryRadius + 4000, 15000);
-    logPlanExecution("warn", `首轮候选仅 ${primary.length} 个，扩展到 ${expandedRadius} 米继续搜索`);
-    const expanded = await context.poiProvider.searchRunPois(input.location, expandedRadius);
-    logPlanExecution("info", `扩圈搜索后共获得 ${expanded.length} 个候选地点`);
-    return expanded;
-  } catch (error) {
-    logPlanExecution("warn", "扩圈搜索失败，回退为首轮跑步地点结果", toErrorMessage(error));
-    return primary;
-  }
+  return ranked;
 }
 
 function buildRunProcessSteps(context: ScenarioPlannerContext, routeCount?: number): PlanProcessStep[] {
@@ -289,7 +432,7 @@ function buildRunProcessSteps(context: ScenarioPlannerContext, routeCount?: numb
     {
       id: RUN_STAGE_IDS.poi,
       title: "跑步地点筛选",
-      detail: "正为你寻找周边游玩位置和路线",
+      detail: "正按里程偏好寻找更适合的真实跑步地点",
       provider: context.poiProvider.name,
       outcome: "success"
     },
@@ -396,6 +539,8 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
     return buildRunProcessSteps(context);
   },
   async plan(context, input) {
+    const distanceProfile = buildRunDistanceProfile(input);
+    const preferredTerrains = new Set(input.preferences?.terrain ?? []);
     const [weatherData, place, pois] = await Promise.all([
       withExecutionStage(RUN_STAGE_IDS.weather, async () => {
         logPlanExecution("info", "开始拉取未来 7 天的逐小时天气数据");
@@ -450,7 +595,7 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
       }),
       withExecutionStage(RUN_STAGE_IDS.poi, async () => {
         logPlanExecution("info", "开始搜索周边真实跑步地点");
-        const resolvedPois = await loadRunPois(context, input);
+        const resolvedPois = await loadRunPois(context, input, distanceProfile, preferredTerrains);
         logPlanExecution("info", `地点筛选完成：共获得 ${resolvedPois.length} 个候选 POI`);
         return resolvedPois;
       })
@@ -461,14 +606,10 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
       throw new AppError("当前位置附近暂未找到可用于跑步推荐的真实 POI，请尝试更换位置后重试。", 404);
     }
 
-    const preferredMin = input.preferences?.preferredDistanceKm?.min ?? 4;
-    const preferredMax = input.preferences?.preferredDistanceKm?.max ?? 8;
-    const preferredCenter = (preferredMin + preferredMax) / 2;
     const paceMinPerKm = input.preferences?.paceMinPerKm ?? 6.5;
-    const preferredTerrains = new Set(input.preferences?.terrain ?? []);
     const routedCandidates = await withExecutionStage(RUN_STAGE_IDS.routing, async () => {
-      const candidatePois = pois.slice(0, 10);
-      logPlanExecution("info", `开始为 ${candidatePois.length} 个候选地点计算步行往返路线`);
+      const candidatePois = prioritizeRunPoisByPreference(pois, distanceProfile, preferredTerrains).slice(0, 10);
+      logPlanExecution("info", `开始为 ${candidatePois.length} 个更贴近里程偏好的候选地点计算步行往返路线`);
 
       const routeCandidates = await Promise.all(
         candidatePois.map(async (poi) => {
@@ -476,7 +617,7 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
             const route = await context.routingProvider.getWalkingRoute(input.location, poi.coordinates);
             const distanceKm = Number(((route.distanceMeters * 2) / 1000).toFixed(1));
             const estTimeMin = Math.max(15, Math.round(distanceKm * paceMinPerKm));
-            const distanceScore = 100 - Math.abs(distanceKm - preferredCenter) * 16;
+            const distanceScore = 100 - Math.abs(distanceKm - distanceProfile.preferredCenterKm) * 16;
             const terrainScore = preferredTerrains.size === 0
               ? 0
               : poi.terrains.filter((terrain) => preferredTerrains.has(terrain)).length * 12;
@@ -502,7 +643,7 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
       logPlanExecution("info", `路线测距结束：${successfulRoutes.length}/${candidatePois.length} 个候选地点成功返回路径`);
 
       const routes = successfulRoutes
-        .filter((item) => item.distanceKm >= Math.max(1.5, preferredMin * 0.7) && item.distanceKm <= preferredMax * 1.5)
+        .filter((item) => item.distanceKm >= distanceProfile.routeFilterMinKm && item.distanceKm <= distanceProfile.routeFilterMaxKm)
         .sort((left, right) => right.score - left.score)
         .slice(0, 3)
         .map<RoutedCandidate>((item) => ({
