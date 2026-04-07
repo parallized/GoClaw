@@ -1,6 +1,6 @@
 import type { Coordinates, PhotoTheme, RunTerrain } from "@goclaw/contracts";
 import type { PoiProvider, PointOfInterest } from "../../domain/service-types";
-import { haversineDistanceMeters, uniqueByName } from "../../lib/geo";
+import { haversineDistanceMeters, uniqueByNameAndCoordinates } from "../../lib/geo";
 import { AppError } from "../../lib/errors";
 import { fetchJson } from "../../lib/http";
 
@@ -56,11 +56,17 @@ function getCoordinates(element: OverpassElement): Coordinates | null {
 
 function inferRunTerrains(tags: Record<string, string>): RunTerrain[] {
   const terrains = new Set<RunTerrain>();
-  if (tags.leisure === "track") {
+  if (["track", "pitch", "sports_centre", "stadium"].includes(tags.leisure ?? "")) {
     terrains.add("track");
     terrains.add("flat");
   }
-  if (tags.leisure === "park" || tags.landuse === "recreation_ground") {
+  if (
+    tags.leisure === "park" ||
+    tags.landuse === "recreation_ground" ||
+    ["footway", "path", "pedestrian"].includes(tags.highway ?? "") ||
+    tags.route === "fitness_trail" ||
+    tags.sport === "running"
+  ) {
     terrains.add("park");
     terrains.add("shaded");
   }
@@ -112,8 +118,34 @@ function normalize(origin: Coordinates, category: "run" | "photo", element: Over
     tags: Object.entries(tags).map(([key, value]) => `${key}:${value}`),
     themes: inferPhotoThemes(tags),
     terrains: inferRunTerrains(tags),
-    rawTags: tags
+    rawTags: tags,
+    source: "overpass",
+    matchReason: buildMatchReason(tags)
   };
+}
+
+function buildMatchReason(tags: Record<string, string>): string | undefined {
+  if (tags.route === "fitness_trail") {
+    return "tag:route=fitness_trail";
+  }
+
+  if (tags.highway && tags.name) {
+    return `tag:highway=${tags.highway}`;
+  }
+
+  if (tags.leisure) {
+    return `tag:leisure=${tags.leisure}`;
+  }
+
+  if (tags.landuse) {
+    return `tag:landuse=${tags.landuse}`;
+  }
+
+  if (tags.sport) {
+    return `tag:sport=${tags.sport}`;
+  }
+
+  return undefined;
 }
 
 function canFallbackToNextEndpoint(error: unknown): boolean {
@@ -178,16 +210,29 @@ export class OverpassPoiProvider implements PoiProvider {
   way["landuse"="recreation_ground"]["name"](around:${radiusMeters},${location.latitude},${location.longitude});
   node["leisure"="track"]["name"](around:${radiusMeters},${location.latitude},${location.longitude});
   way["leisure"="track"]["name"](around:${radiusMeters},${location.latitude},${location.longitude});
+  node["leisure"="pitch"]["name"](around:${radiusMeters},${location.latitude},${location.longitude});
+  way["leisure"="pitch"]["name"](around:${radiusMeters},${location.latitude},${location.longitude});
+  node["leisure"="sports_centre"]["name"](around:${radiusMeters},${location.latitude},${location.longitude});
+  way["leisure"="sports_centre"]["name"](around:${radiusMeters},${location.latitude},${location.longitude});
+  node["leisure"="stadium"]["name"](around:${radiusMeters},${location.latitude},${location.longitude});
+  way["leisure"="stadium"]["name"](around:${radiusMeters},${location.latitude},${location.longitude});
+  node["route"="fitness_trail"]["name"](around:${radiusMeters},${location.latitude},${location.longitude});
+  way["route"="fitness_trail"]["name"](around:${radiusMeters},${location.latitude},${location.longitude});
+  node["sport"="running"]["name"](around:${radiusMeters},${location.latitude},${location.longitude});
+  way["sport"="running"]["name"](around:${radiusMeters},${location.latitude},${location.longitude});
+  node["highway"~"^(footway|path|pedestrian)$"]["name"](around:${radiusMeters},${location.latitude},${location.longitude});
+  way["highway"~"^(footway|path|pedestrian)$"]["name"](around:${radiusMeters},${location.latitude},${location.longitude});
 );
 out center tags 80;
 `;
 
     const request = (async () => {
       try {
-        return writeCache(key, uniqueByName(
+        return writeCache(key, uniqueByNameAndCoordinates(
           (await queryOverpass(queryText, this.endpoints))
             .map((element) => normalize(location, "run", element))
             .filter((item): item is PointOfInterest => item !== null)
+            .filter((item) => item.distanceMeters <= radiusMeters)
             .sort((left, right) => left.distanceMeters - right.distanceMeters)
         ));
       } catch (error) {
@@ -246,10 +291,11 @@ out center tags 120;
 
     const request = (async () => {
       try {
-        return writeCache(key, uniqueByName(
+        return writeCache(key, uniqueByNameAndCoordinates(
           (await queryOverpass(queryText, this.endpoints))
             .map((element) => normalize(location, "photo", element))
             .filter((item): item is PointOfInterest => item !== null)
+            .filter((item) => item.distanceMeters <= radiusMeters)
             .sort((left, right) => left.distanceMeters - right.distanceMeters)
         ));
       } catch (error) {

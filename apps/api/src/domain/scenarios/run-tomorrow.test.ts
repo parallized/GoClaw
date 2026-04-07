@@ -1,7 +1,9 @@
+import type { PlanExecutionStreamEvent } from "@goclaw/contracts";
 import { describe, expect, it, mock, afterEach } from "bun:test";
 import type { AiProvider, WeatherForecast, PointOfInterest } from "../service-types";
 import type { ScenarioPlannerContext } from "../scenario-definition";
 import { AppError } from "../../lib/errors";
+import { runWithPlanExecution } from "../../lib/plan-execution";
 import { runTomorrowScenario } from "./run-tomorrow";
 
 function makeDailyWeather(date: string) {
@@ -99,6 +101,24 @@ function makeContext(aiProvider: AiProvider | null = null): ScenarioPlannerConte
     },
     aiProvider
   };
+}
+
+async function runWithExecution(
+  context: ScenarioPlannerContext,
+  input: Parameters<typeof runTomorrowScenario.plan>[1]
+) {
+  const events: PlanExecutionStreamEvent[] = [];
+
+  const result = await runWithPlanExecution(
+    runTomorrowScenario.id,
+    runTomorrowScenario.getExecutionStages(context),
+    (event) => {
+      events.push(event);
+    },
+    () => runTomorrowScenario.plan(context, input)
+  );
+
+  return { result, events };
 }
 
 describe("runTomorrowScenario - AI enhancement", () => {
@@ -349,51 +369,69 @@ describe("runTomorrowScenario - AI enhancement", () => {
     expect(themed.routes.map((route) => route.name)).toEqual(base.routes.map((route) => route.name));
   });
 
-  it("falls back to primary POIs when expanded POI lookup fails", async () => {
-    const forecast = makeForecast();
-    const primaryPois = [makeRunPoi("r1", "世纪公园跑道")];
-    let callCount = 0;
+  it("uses a strict search radius derived from the selected running distance", async () => {
+    let requestedRadius = 0;
 
     const context: ScenarioPlannerContext = {
-      weatherProvider: {
-        name: "mock-weather",
-        getForecast: async () => forecast
-      },
-      geocodingProvider: {
-        name: "mock-geo",
-        reverseGeocode: async () => ({ city: "上海", displayName: "上海市" })
-      },
+      ...makeContext(null),
       poiProvider: {
         name: "mock-poi",
-        searchRunPois: async () => {
-          callCount += 1;
-          if (callCount === 1) {
-            return primaryPois;
-          }
-
-          throw new AppError("请求外部服务失败：429 Too Many Requests", 429);
+        searchRunPois: async (_location, radiusMeters) => {
+          requestedRadius = radiusMeters;
+          return [
+            makeRunPoi("r1", "空谷长滩水公园", { distanceMeters: 2100, terrains: ["park", "waterfront"] }),
+            makeRunPoi("r2", "校园操场", { distanceMeters: 1800, terrains: ["track"] }),
+            makeRunPoi("r3", "滨水步道", { distanceMeters: 2400, terrains: ["waterfront"] })
+          ];
         },
         searchPhotoPois: async () => []
-      },
-      routingProvider: {
-        name: "mock-routing",
-        getWalkingRoute: async () => ({ distanceMeters: 2500, durationSeconds: 1800, source: "mock" })
-      },
-      navigationProvider: {
-        name: "mock-nav",
-        buildNavigationUrl: (coords, label) => `https://nav.test/${label}`
-      },
-      aiProvider: null
+      }
     };
 
-    const result = await runTomorrowScenario.plan(context, {
+    await runTomorrowScenario.plan(context, {
+      location: { latitude: 31.23, longitude: 121.47 },
+      timezone: "Asia/Shanghai",
+      preferences: {
+        preferredDistanceKm: {
+          min: 1,
+          max: 5
+        }
+      }
+    });
+
+    expect(requestedRadius).toBe(2500);
+  });
+
+  it("emits a structured candidate pool and keeps raw candidates even when usable POIs are below the target minimum", async () => {
+    const context: ScenarioPlannerContext = {
+      ...makeContext(null),
+      poiProvider: {
+        name: "mock-poi",
+        searchRunPois: async () => [
+          makeRunPoi("r1", "空谷长滩水公园", { distanceMeters: 1500, terrains: ["park", "waterfront"] }),
+          makeRunPoi("r2", "校园操场", { distanceMeters: 1600, terrains: ["track"] }),
+          makeRunPoi("r3", "社区道路", { distanceMeters: 1700, terrains: ["flat"], rawTags: { type: "道路附属设施" } })
+        ],
+        searchPhotoPois: async () => []
+      }
+    };
+
+    const { result, events } = await runWithExecution(context, {
       location: { latitude: 31.23, longitude: 121.47 },
       timezone: "Asia/Shanghai"
     });
 
-    expect(callCount).toBe(2);
-    expect(result.routes.length).toBe(1);
-    expect(result.routes[0]?.name).toBe("世纪公园跑道");
+    const candidateEvent = events.find((event): event is Extract<PlanExecutionStreamEvent, { type: "data"; dataType: "candidates" }> =>
+      event.type === "data" && event.dataType === "candidates"
+    );
+
+    expect(candidateEvent).toBeDefined();
+    expect(candidateEvent?.payload.rawCandidates).toHaveLength(3);
+    expect(candidateEvent?.payload.usableCandidates).toHaveLength(2);
+    expect(candidateEvent?.payload.recommendedCandidates?.length).toBeGreaterThanOrEqual(2);
+    expect(candidateEvent?.payload.minimumSatisfied).toBe(false);
+    expect(candidateEvent?.payload.rawCandidates.some((candidate) => candidate.qualityTier === "raw")).toBe(true);
+    expect(result.routes.length).toBeGreaterThanOrEqual(1);
   });
 
   it("returns 503 when routing service fails for all candidates", async () => {

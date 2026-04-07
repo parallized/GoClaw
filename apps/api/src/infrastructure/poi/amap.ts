@@ -1,6 +1,6 @@
 import type { Coordinates, PhotoTheme, RunTerrain } from "@goclaw/contracts";
 import type { PoiProvider, PointOfInterest } from "../../domain/service-types";
-import { haversineDistanceMeters, uniqueByName } from "../../lib/geo";
+import { haversineDistanceMeters, uniqueByNameAndCoordinates } from "../../lib/geo";
 import { AppError } from "../../lib/errors";
 import { normalizeAmapError, requestAmapJson, type AmapWebServiceConfig } from "../amap/web-service";
 
@@ -24,12 +24,44 @@ interface AmapPoiResponse {
   pois?: AmapPoiItem[];
 }
 
+interface AmapSearchQuery {
+  kind: "keyword" | "types";
+  value: string;
+  matchReason: string;
+}
+
 const CACHE_TTL_MS = 20 * 60_000;
 const cache = new Map<string, { expiresAt: number; value: PointOfInterest[] }>();
 const pending = new Map<string, Promise<PointOfInterest[]>>();
 
-const RUN_KEYWORDS = ["公园", "绿道", "步道", "体育场"] as const;
-const PHOTO_KEYWORDS = ["公园", "景点", "博物馆", "观景台", "古建筑"] as const;
+const PAGE_SIZE = 20;
+const MAX_PAGES_PER_QUERY = 3;
+const RUN_QUERY_TARGET = 24;
+const PHOTO_QUERY_TARGET = 12;
+
+const RUN_QUERY_SPECS: readonly AmapSearchQuery[] = [
+  { kind: "keyword", value: "公园", matchReason: "keyword:公园" },
+  { kind: "keyword", value: "绿道", matchReason: "keyword:绿道" },
+  { kind: "keyword", value: "步道", matchReason: "keyword:步道" },
+  { kind: "keyword", value: "体育场", matchReason: "keyword:体育场" },
+  { kind: "keyword", value: "操场", matchReason: "keyword:操场" },
+  { kind: "keyword", value: "跑道", matchReason: "keyword:跑道" },
+  { kind: "keyword", value: "运动场", matchReason: "keyword:运动场" },
+  { kind: "keyword", value: "体育中心", matchReason: "keyword:体育中心" },
+  { kind: "keyword", value: "健身步道", matchReason: "keyword:健身步道" },
+  { kind: "keyword", value: "滨江绿道", matchReason: "keyword:滨江绿道" },
+  { kind: "keyword", value: "河道绿道", matchReason: "keyword:河道绿道" },
+  { kind: "keyword", value: "口袋公园", matchReason: "keyword:口袋公园" },
+  { kind: "keyword", value: "校园操场", matchReason: "keyword:校园操场" },
+  { kind: "types", value: "110000|110101|080000|080100", matchReason: "types:run-core" }
+] as const;
+const PHOTO_QUERY_SPECS: readonly AmapSearchQuery[] = [
+  { kind: "keyword", value: "公园", matchReason: "keyword:公园" },
+  { kind: "keyword", value: "景点", matchReason: "keyword:景点" },
+  { kind: "keyword", value: "博物馆", matchReason: "keyword:博物馆" },
+  { kind: "keyword", value: "观景台", matchReason: "keyword:观景台" },
+  { kind: "keyword", value: "古建筑", matchReason: "keyword:古建筑" }
+] as const;
 
 function cacheKey(kind: "run" | "photo", location: Coordinates, radiusMeters: number): string {
   return `${kind}:${location.latitude.toFixed(3)}:${location.longitude.toFixed(3)}:${radiusMeters}`;
@@ -129,7 +161,12 @@ function inferPhotoThemes(text: string): PhotoTheme[] {
   return Array.from(themes);
 }
 
-function normalize(origin: Coordinates, category: "run" | "photo", poi: AmapPoiItem): PointOfInterest | null {
+function normalize(
+  origin: Coordinates,
+  category: "run" | "photo",
+  poi: AmapPoiItem,
+  query: AmapSearchQuery
+): PointOfInterest | null {
   const coordinates = parseCoordinates(poi.location);
   const name = poi.name?.trim();
   if (!coordinates || !name) {
@@ -162,7 +199,9 @@ function normalize(origin: Coordinates, category: "run" | "photo", poi: AmapPoiI
       .map(([key, value]) => `${key}:${value}`),
     themes: inferPhotoThemes(text),
     terrains: inferRunTerrains(text),
-    rawTags
+    rawTags,
+    source: "amap",
+    matchReason: query.matchReason
   };
 }
 
@@ -174,15 +213,17 @@ async function queryAround(
   config: AmapWebServiceConfig,
   location: Coordinates,
   radiusMeters: number,
-  keyword: string
+  query: AmapSearchQuery,
+  page: number
 ): Promise<AmapPoiItem[]> {
   const response = await requestAmapJson<AmapPoiResponse>(config, "/v3/place/around", {
     location: `${location.longitude},${location.latitude}`,
     radius: clampRadius(radiusMeters),
-    keywords: keyword,
+    keywords: query.kind === "keyword" ? query.value : undefined,
+    types: query.kind === "types" ? query.value : undefined,
     sortrule: "distance",
-    offset: 20,
-    page: 1,
+    offset: PAGE_SIZE,
+    page,
     extensions: "base"
   });
 
@@ -193,16 +234,30 @@ async function collectPois(
   config: AmapWebServiceConfig,
   location: Coordinates,
   radiusMeters: number,
-  keywords: readonly string[]
-): Promise<AmapPoiItem[]> {
-  const results: AmapPoiItem[] = [];
+  queries: readonly AmapSearchQuery[],
+  targetCount: number
+): Promise<Array<{ poi: AmapPoiItem; query: AmapSearchQuery }>> {
+  const results: Array<{ poi: AmapPoiItem; query: AmapSearchQuery }> = [];
   let lastError: unknown;
   let successCount = 0;
 
-  for (const keyword of keywords) {
+  for (const query of queries) {
     try {
-      results.push(...await queryAround(config, location, radiusMeters, keyword));
-      successCount += 1;
+      for (let page = 1; page <= MAX_PAGES_PER_QUERY; page += 1) {
+        const pageResults = await queryAround(config, location, radiusMeters, query, page);
+        if (page === 1) {
+          successCount += 1;
+        }
+        results.push(...pageResults.map((poi) => ({ poi, query })));
+
+        if (pageResults.length < PAGE_SIZE || results.length >= targetCount) {
+          break;
+        }
+      }
+
+      if (results.length >= targetCount) {
+        break;
+      }
     } catch (error) {
       if (error instanceof AppError && /AMAP_WEB_SERVICE_KEY|高德地点服务 Key 无效|权限未开通/.test(error.message)) {
         throw error;
@@ -228,6 +283,21 @@ async function collectPois(
   return results;
 }
 
+function normalizeAndFilter(
+  origin: Coordinates,
+  category: "run" | "photo",
+  radiusMeters: number,
+  items: Array<{ poi: AmapPoiItem; query: AmapSearchQuery }>
+): PointOfInterest[] {
+  return uniqueByNameAndCoordinates(
+    items
+      .map(({ poi, query }) => normalize(origin, category, poi, query))
+      .filter((item): item is PointOfInterest => item !== null)
+      .filter((item) => item.distanceMeters <= radiusMeters)
+      .sort((left, right) => left.distanceMeters - right.distanceMeters)
+  );
+}
+
 export class AmapPoiProvider implements PoiProvider {
   readonly name = "amap-web-service";
 
@@ -247,11 +317,11 @@ export class AmapPoiProvider implements PoiProvider {
 
     const request = (async () => {
       try {
-        return writeCache(key, uniqueByName(
-          (await collectPois(this.config, location, radiusMeters, RUN_KEYWORDS))
-            .map((poi) => normalize(location, "run", poi))
-            .filter((item): item is PointOfInterest => item !== null)
-            .sort((left, right) => left.distanceMeters - right.distanceMeters)
+        return writeCache(key, normalizeAndFilter(
+          location,
+          "run",
+          radiusMeters,
+          await collectPois(this.config, location, radiusMeters, RUN_QUERY_SPECS, RUN_QUERY_TARGET)
         ));
       } catch (error) {
         const stale = readCache(key, true);
@@ -283,11 +353,11 @@ export class AmapPoiProvider implements PoiProvider {
 
     const request = (async () => {
       try {
-        return writeCache(key, uniqueByName(
-          (await collectPois(this.config, location, radiusMeters, PHOTO_KEYWORDS))
-            .map((poi) => normalize(location, "photo", poi))
-            .filter((item): item is PointOfInterest => item !== null)
-            .sort((left, right) => left.distanceMeters - right.distanceMeters)
+        return writeCache(key, normalizeAndFilter(
+          location,
+          "photo",
+          radiusMeters,
+          await collectPois(this.config, location, radiusMeters, PHOTO_QUERY_SPECS, PHOTO_QUERY_TARGET)
         ));
       } catch (error) {
         const stale = readCache(key, true);

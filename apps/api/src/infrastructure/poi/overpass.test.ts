@@ -2,8 +2,26 @@ import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:te
 import { OverpassPoiProvider } from "./overpass";
 
 const location = { latitude: 31.2304, longitude: 121.4737 };
+const secondaryLocation = { latitude: 31.2308, longitude: 121.4741 };
 
-function makeResponse(name = "世纪公园") {
+function makeResponse(name = "世纪公园", latitude = 31.231, longitude = 121.474) {
+  return {
+    elements: [
+      {
+        id: 1,
+        type: "node",
+        lat: latitude,
+        lon: longitude,
+        tags: {
+          name,
+          leisure: "park"
+        }
+      }
+    ]
+  };
+}
+
+function makeRunResponse() {
   return {
     elements: [
       {
@@ -12,8 +30,17 @@ function makeResponse(name = "世纪公园") {
         lat: 31.231,
         lon: 121.474,
         tags: {
-          name,
-          leisure: "park"
+          name: "校园操场",
+          leisure: "stadium"
+        }
+      },
+      {
+        id: 2,
+        type: "way",
+        center: { lat: 31.232, lon: 121.475 },
+        tags: {
+          name: "滨水步道",
+          highway: "footway"
         }
       }
     ]
@@ -68,9 +95,34 @@ describe("OverpassPoiProvider", () => {
     expect(fetchSpy.mock.calls[1]?.[0]).toBe("https://secondary.example/api/interpreter");
   });
 
+  it("queries expanded running tags and normalizes named footways and stadiums", async () => {
+    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(makeRunResponse()), { status: 200 })
+    );
+
+    const provider = new OverpassPoiProvider(["https://overpass.example/api/interpreter"]);
+    const result = await provider.searchRunPois(secondaryLocation, 5000);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    const body = String(init.body);
+
+    expect(body).toContain('"leisure"="pitch"');
+    expect(body).toContain('"leisure"="sports_centre"');
+    expect(body).toContain('"leisure"="stadium"');
+    expect(body).toContain('"highway"~"^(footway|path|pedestrian)$"');
+    expect(result).toHaveLength(2);
+    expect(result[0]?.name).toBe("校园操场");
+    expect(result[0]?.source).toBe("overpass");
+    expect(result[0]?.matchReason).toBe("tag:leisure=stadium");
+    expect(result[1]?.terrains).toContain("park");
+    expect(result[1]?.matchReason).toBe("tag:highway=footway");
+  });
+
   it("returns stale cached results when upstream later fails", async () => {
     const fetchSpy = spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(new Response(JSON.stringify(makeResponse()), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(makeResponse("世纪公园", 35.231, 118.474)), { status: 200 }))
       .mockResolvedValueOnce(new Response("rate limited", { status: 429, statusText: "Too Many Requests" }));
 
     const provider = new OverpassPoiProvider(["https://cache-test.example/api/interpreter"]);

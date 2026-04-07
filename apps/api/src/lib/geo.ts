@@ -31,3 +31,48 @@ export function uniqueByName<T extends { name: string }>(items: T[]): T[] {
     return true;
   });
 }
+
+function normalizeName(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[\s，。、“”‘’：:；;、,.!?！？（）()\-—]/gu, "");
+}
+
+export function uniqueByNameAndCoordinates<T extends { name: string; coordinates: Coordinates }>(
+  items: readonly T[],
+  distanceThresholdMeters = 120
+): T[] {
+  const result: T[] = [];
+
+  for (const item of items) {
+    const normalizedName = normalizeName(item.name);
+    if (!normalizedName) {
+      continue;
+    }
+
+    const duplicated = result.some((existing) => {
+      const existingName = normalizeName(existing.name);
+      const distance = haversineDistanceMeters(existing.coordinates, item.coordinates);
+
+      if (distance > distanceThresholdMeters) {
+        return false;
+      }
+
+      if (existingName === normalizedName) {
+        return true;
+      }
+
+      return distance <= 35 && (
+        existingName.includes(normalizedName) ||
+        normalizedName.includes(existingName)
+      );
+    });
+
+    if (!duplicated) {
+      result.push(item);
+    }
+  }
+
+  return result;
+}

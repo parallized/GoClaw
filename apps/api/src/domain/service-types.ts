@@ -1,4 +1,5 @@
 import type { Coordinates, PhotoTheme, RunTerrain } from "@goclaw/contracts";
+import type { PoiCandidateQualityTier } from "@goclaw/contracts";
 
 export type WeatherCode = number;
 
@@ -45,6 +46,9 @@ export interface PointOfInterest {
   themes: PhotoTheme[];
   terrains: RunTerrain[];
   rawTags: Record<string, string>;
+  source?: string;
+  matchReason?: string;
+  qualityTier?: PoiCandidateQualityTier;
 }
 
 export interface RoutePlan {
@@ -83,4 +87,3 @@ export interface AiProvider {
   readonly name: string;
   generateText(input: { system: string; user: string; temperature?: number }): Promise<string>;
 }
-

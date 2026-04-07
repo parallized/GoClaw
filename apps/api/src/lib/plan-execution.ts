@@ -1,10 +1,12 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type {
+  PlanCandidatesDataPayload,
   PlanExecutionLogLevel,
   PlanExecutionStage,
   PlanExecutionStageStatus,
   PlanExecutionStreamEvent,
   PlanProcessStep,
+  PlanWeatherDataPayload,
   ScenarioId
 } from "@goclaw/contracts";
 import { toErrorMessage } from "./errors";
@@ -129,16 +131,31 @@ export function logPlanExecution(
   });
 }
 
-export function emitPlanData(dataType: "weather" | "candidates", payload: unknown) {
+export function emitPlanData(dataType: "weather", payload: PlanWeatherDataPayload): void;
+export function emitPlanData(dataType: "candidates", payload: PlanCandidatesDataPayload): void;
+export function emitPlanData(
+  dataType: "weather" | "candidates",
+  payload: PlanWeatherDataPayload | PlanCandidatesDataPayload
+) {
   const state = executionStorage.getStore();
   if (!state) {
+    return;
+  }
+
+  if (dataType === "weather") {
+    state.emit({
+      type: "data",
+      dataType,
+      payload: payload as PlanWeatherDataPayload,
+      timestamp: now()
+    });
     return;
   }
 
   state.emit({
     type: "data",
     dataType,
-    payload,
+    payload: payload as PlanCandidatesDataPayload,
     timestamp: now()
   });
 }

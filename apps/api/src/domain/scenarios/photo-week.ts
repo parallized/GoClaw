@@ -3,6 +3,7 @@ import {
   photoWeekRequestSchema,
   scenarioCatalog,
   type CameraSkill,
+  type PlanCandidatesDataPayload,
   type PlanProcessStep,
   type PhotoSpot,
   type PhotoTheme,
@@ -255,6 +256,23 @@ async function loadPhotoPois(context: ScenarioPlannerContext, location: { latitu
   }
 }
 
+function buildPhotoCandidatePool(pois: readonly PointOfInterest[]): PlanCandidatesDataPayload {
+  const usableCandidates = pois.map((poi) => ({
+    ...poi,
+    qualityTier: "usable" as const
+  }));
+
+  return {
+    rawCandidates: usableCandidates,
+    usableCandidates,
+    recommendedCandidates: usableCandidates.slice(0, 8).map((poi) => ({
+      ...poi,
+      qualityTier: "recommended" as const
+    })),
+    minimumSatisfied: usableCandidates.length > 0
+  };
+}
+
 function buildPhotoProcessSteps(context: ScenarioPlannerContext, dayCount?: number): PlanProcessStep[] {
   return [
     {
@@ -495,7 +513,7 @@ export const photoWeekScenario: ScenarioDefinition<typeof photoWeekRequestSchema
         const resolvedPois = await loadPhotoPois(context, input.location, input.preferences?.mobilityRadiusKm ?? 12);
         logPlanExecution("info", `摄影点位筛选完成：共获得 ${resolvedPois.length} 个候选点`);
         
-        emitPlanData("candidates", resolvedPois);
+        emitPlanData("candidates", buildPhotoCandidatePool(resolvedPois));
         return resolvedPois;
       })
     ]);

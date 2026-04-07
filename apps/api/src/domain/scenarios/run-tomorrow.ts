@@ -1,4 +1,5 @@
 import {
+  type PlanCandidatesDataPayload,
   runPlanRequestSchema,
   runPlanSchema,
   scenarioCatalog,
@@ -67,7 +68,9 @@ type RunDistanceProfile = {
   poiMinMeters: number;
   poiMaxMeters: number;
   poiTargetMeters: number;
-  searchRadii: number[];
+  searchRadiusMeters: number;
+  minRawCandidates: number;
+  minUsableCandidates: number;
 };
 
 function manifest() {
@@ -212,7 +215,7 @@ function formatKilometers(value: number): string {
 }
 
 function clampSearchRadius(radiusMeters: number, maxRadius = 15_000): number {
-  return Math.min(maxRadius, Math.max(2_500, Math.round(radiusMeters / 100) * 100));
+  return Math.min(maxRadius, Math.max(500, Math.round(radiusMeters / 100) * 100));
 }
 
 function buildRunDistanceProfile(input: RunPlanRequest): RunDistanceProfile {
@@ -222,10 +225,7 @@ function buildRunDistanceProfile(input: RunPlanRequest): RunDistanceProfile {
   const oneWayMinMeters = preferredMinKm * 500;
   const oneWayMaxMeters = preferredMaxKm * 500;
   const poiMinMeters = Math.max(500, Math.round(oneWayMinMeters * 0.75));
-  const poiMaxMeters = Math.max(poiMinMeters + 500, Math.round(oneWayMaxMeters * 1.1));
-  const baseRadius = clampSearchRadius(poiMaxMeters + 1_500, 11_000);
-  const expandedRadius = clampSearchRadius(Math.max(baseRadius + 2_500, poiMaxMeters + 3_500), 13_000);
-  const fallbackRadius = clampSearchRadius(Math.max(expandedRadius + 2_000, poiMaxMeters + 5_500));
+  const poiMaxMeters = Math.max(poiMinMeters + 300, Math.round(oneWayMaxMeters));
 
   return {
     preferredMinKm,
@@ -236,7 +236,9 @@ function buildRunDistanceProfile(input: RunPlanRequest): RunDistanceProfile {
     poiMinMeters,
     poiMaxMeters,
     poiTargetMeters: Math.round((poiMinMeters + poiMaxMeters) / 2),
-    searchRadii: [...new Set([baseRadius, expandedRadius, fallbackRadius])]
+    searchRadiusMeters: clampSearchRadius(oneWayMaxMeters),
+    minRawCandidates: 6,
+    minUsableCandidates: 3
   };
 }
 
@@ -257,7 +259,7 @@ function normalizeCopy(text: string): string {
 }
 
 function buildPoiKey(poi: PointOfInterest): string {
-  return `${poi.id}:${normalizeCopy(poi.name)}:${poi.coordinates.latitude.toFixed(5)}:${poi.coordinates.longitude.toFixed(5)}`;
+  return `${normalizeCopy(poi.name)}:${poi.coordinates.latitude.toFixed(4)}:${poi.coordinates.longitude.toFixed(4)}`;
 }
 
 function comparePoisByPreference(
@@ -302,6 +304,84 @@ function prioritizeRunPoisByPreference(
 
 function countMileageMatchedPois(pois: readonly PointOfInterest[], profile: RunDistanceProfile): number {
   return pois.filter((poi) => distanceToRange(poi.distanceMeters, profile.poiMinMeters, profile.poiMaxMeters) === 0).length;
+}
+
+function buildRunPoiSearchText(poi: PointOfInterest): string {
+  return [
+    poi.name,
+    poi.matchReason,
+    poi.rawTags.type,
+    poi.rawTags.typecode,
+    ...poi.tags
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function isRunPoiUsable(poi: PointOfInterest): boolean {
+  if (poi.terrains.some((terrain) => terrain === "track" || terrain === "park" || terrain === "waterfront")) {
+    return true;
+  }
+
+  return /公园|绿道|步道|操场|跑道|运动场|体育场|体育中心|滨江|河道|健身步道|fitness_trail|sports_centre|stadium|pitch|recreation_ground|sport:running/u.test(
+    buildRunPoiSearchText(poi)
+  );
+}
+
+function withQualityTier(
+  poi: PointOfInterest,
+  qualityTier: "raw" | "usable" | "recommended"
+): PointOfInterest {
+  return {
+    ...poi,
+    qualityTier
+  };
+}
+
+function buildRunCandidatePool(
+  pois: readonly PointOfInterest[],
+  profile: RunDistanceProfile
+): PlanCandidatesDataPayload {
+  const prioritized = prioritizeRunPoisByPreference(pois, profile);
+  const usableIds = new Set(
+    prioritized
+      .filter((poi) => isRunPoiUsable(poi))
+      .map((poi) => poi.id)
+  );
+  const usableCandidates = prioritized
+    .filter((poi) => usableIds.has(poi.id))
+    .map((poi) => withQualityTier(poi, "usable"));
+  const recommendedSeed = usableCandidates.length > 0 ? usableCandidates : prioritized.map((poi) => withQualityTier(poi, "raw"));
+
+  return {
+    rawCandidates: prioritized.map((poi) => withQualityTier(poi, usableIds.has(poi.id) ? "usable" : "raw")),
+    usableCandidates,
+    recommendedCandidates: recommendedSeed.slice(0, 6).map((poi) => withQualityTier(poi, "recommended")),
+    minimumSatisfied: usableCandidates.length >= profile.minUsableCandidates
+  };
+}
+
+function buildRoutingCandidates(
+  pool: PlanCandidatesDataPayload,
+  profile: RunDistanceProfile
+): PointOfInterest[] {
+  const seen = new Set<string>();
+  const ordered: PointOfInterest[] = [];
+  const seed = pool.usableCandidates.length > 0
+    ? [...pool.usableCandidates, ...pool.rawCandidates]
+    : pool.rawCandidates;
+
+  for (const poi of prioritizeRunPoisByPreference(seed, profile)) {
+    const key = buildPoiKey(poi);
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    ordered.push(poi);
+  }
+
+  return ordered;
 }
 
 function dedupeTextList(items: string[]): string[] {
@@ -436,43 +516,31 @@ async function loadRunPois(
   context: ScenarioPlannerContext,
   input: RunPlanRequest,
   profile: RunDistanceProfile
-): Promise<PointOfInterest[]> {
-  let ranked: PointOfInterest[] = [];
+): Promise<PlanCandidatesDataPayload> {
+  const radius = profile.searchRadiusMeters;
+  logPlanExecution(
+    "info",
+    `按严格半径 ${radius} 米搜索跑步地点，并与 ${formatKilometers(profile.preferredMinKm)}-${formatKilometers(profile.preferredMaxKm)} km 目标里程分开处理`
+  );
 
-  for (const [index, radius] of profile.searchRadii.entries()) {
-    try {
-      if (index === 0) {
-        logPlanExecution(
-          "info",
-          `按里程偏好 ${formatKilometers(profile.preferredMinKm)}-${formatKilometers(profile.preferredMaxKm)} km 搜索约 ${radius} 米范围内的跑步地点`
-        );
-      } else {
-        logPlanExecution(
-          "info",
-          `当前候选与 ${formatKilometers(profile.preferredMinKm)}-${formatKilometers(profile.preferredMaxKm)} km 里程偏好的匹配不足，扩展到 ${radius} 米继续搜索`
-        );
-      }
+  const resolved = await context.poiProvider.searchRunPois(input.location, radius);
+  const pool = buildRunCandidatePool(resolved, profile);
+  const matchedCount = countMileageMatchedPois(pool.rawCandidates, profile);
 
-      const resolved = await context.poiProvider.searchRunPois(input.location, radius);
-      ranked = prioritizeRunPoisByPreference([...ranked, ...resolved], profile);
+  logPlanExecution(
+    "info",
+    `共获得 ${pool.rawCandidates.length} 个原始候选，其中 ${pool.usableCandidates.length} 个可直接用于跑步推荐，${matchedCount} 个更贴近当前里程偏好`
+  );
 
-      const matchedCount = countMileageMatchedPois(ranked, profile);
-      logPlanExecution("info", `累计获得 ${ranked.length} 个候选地点，其中 ${matchedCount} 个更贴近当前里程偏好`);
-
-      if (matchedCount >= 3 || (matchedCount > 0 && ranked.length >= 10)) {
-        return ranked;
-      }
-    } catch (error) {
-      if (index === 0) {
-        throw error;
-      }
-
-      logPlanExecution("warn", "扩圈搜索失败，回退为上一轮已获得的跑步地点结果", toErrorMessage(error));
-      return ranked;
-    }
+  if (pool.rawCandidates.length < profile.minRawCandidates) {
+    logPlanExecution("warn", `严格半径内原始候选仅 ${pool.rawCandidates.length} 个，前端将继续展示全部候选供 AI 或手动筛选`);
   }
 
-  return ranked;
+  if (!pool.minimumSatisfied) {
+    logPlanExecution("warn", `当前可用跑步 POI 仅 ${pool.usableCandidates.length} 个，未达到目标下限 ${profile.minUsableCandidates} 个`);
+  }
+
+  return pool;
 }
 
 function buildRunProcessSteps(context: ScenarioPlannerContext, routeCount?: number): PlanProcessStep[] {
@@ -655,7 +723,7 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
   },
   async plan(context, input) {
     const distanceProfile = buildRunDistanceProfile(input);
-    const [weatherData, place, pois] = await Promise.all([
+    const [weatherData, place, poiPool] = await Promise.all([
       withExecutionStage(RUN_STAGE_IDS.weather, async () => {
         logPlanExecution("info", "开始拉取未来 7 天的逐小时天气数据");
         const forecast = await context.weatherProvider.getForecast(input.location, input.timezone, 7);
@@ -712,7 +780,10 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
       withExecutionStage(RUN_STAGE_IDS.poi, async () => {
         logPlanExecution("info", "开始搜索周边真实跑步地点");
         const resolvedPois = await loadRunPois(context, input, distanceProfile);
-        logPlanExecution("info", `地点筛选完成：共获得 ${resolvedPois.length} 个候选 POI`);
+        logPlanExecution(
+          "info",
+          `地点筛选完成：共获得 ${resolvedPois.rawCandidates.length} 个候选 POI，其中 ${resolvedPois.usableCandidates.length} 个可直接用于跑步推荐`
+        );
         
         emitPlanData("candidates", resolvedPois);
 
@@ -720,15 +791,15 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
       })
     ]);
 
-    if (pois.length === 0) {
+    if (poiPool.rawCandidates.length === 0) {
       logPlanExecution("error", "附近未找到可用于跑步推荐的真实 POI", undefined, RUN_STAGE_IDS.poi);
       throw new AppError("当前位置附近暂未找到可用于跑步推荐的真实 POI，请尝试更换位置后重试。", 404);
     }
 
     const paceMinPerKm = input.preferences?.paceMinPerKm ?? 6.5;
     const routedCandidates = await withExecutionStage(RUN_STAGE_IDS.routing, async () => {
-      const candidatePois = prioritizeRunPoisByPreference(pois, distanceProfile).slice(0, 10);
-      logPlanExecution("info", `开始为 ${candidatePois.length} 个更贴近里程偏好的候选地点计算步行往返路线`);
+      const candidatePois = buildRoutingCandidates(poiPool, distanceProfile).slice(0, 10);
+      logPlanExecution("info", `开始为 ${candidatePois.length} 个候选地点计算步行往返路线，优先使用 usableCandidates`);
 
       const routeCandidates = await Promise.all(
         candidatePois.map(async (poi) => {

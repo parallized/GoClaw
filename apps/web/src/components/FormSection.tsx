@@ -1,7 +1,15 @@
 import { useEffect, useId, useRef, useState } from "react";
 import AMapLoader from "@amap/amap-jsapi-loader";
 import { Icon } from "@iconify/react";
-import type { CameraSkill, PhotoTheme, RunTerrain, ScenarioId, PlanResult } from "@goclaw/contracts";
+import type {
+  CameraSkill,
+  PhotoTheme,
+  RunTerrain,
+  ScenarioId,
+  PlanCandidatesDataPayload,
+  PlanResult,
+  PointOfInterestCandidate
+} from "@goclaw/contracts";
 import type { PhotoWeekRequest, RunPlanRequest } from "@goclaw/contracts";
 import type { ReservationTarget } from "./NavigationStack";
 
@@ -60,7 +68,7 @@ export interface FormSectionProps {
   onRelocate: () => void;
   isGenerating?: boolean;
   currentWeather?: string;
-  poiCandidates?: any[];
+  poiCandidates?: PlanCandidatesDataPayload;
   result?: PlanResult | null;
   onNavigate?: (target?: ReservationTarget) => void;
 }
@@ -106,6 +114,22 @@ function openTimeInput(input: HTMLInputElement | null) {
   } catch (err) {
     input.focus();
   }
+}
+
+function buildCandidateTags(candidate: PointOfInterestCandidate): string[] {
+  const structured = candidate.category === "run" ? candidate.terrains : candidate.themes;
+  const meta = [candidate.source, candidate.matchReason, candidate.qualityTier].filter(Boolean) as string[];
+  return [...structured, ...meta, ...candidate.tags].filter(Boolean).slice(0, 8);
+}
+
+function buildCandidateDescription(candidate: PointOfInterestCandidate) {
+  const distanceLabel = candidate.distanceMeters >= 1000
+    ? `${(candidate.distanceMeters / 1000).toFixed(1)} km`
+    : `${Math.round(candidate.distanceMeters)} m`;
+  const preferenceTags = candidate.category === "run" ? candidate.terrains : candidate.themes;
+  const preferenceLabel = preferenceTags.length > 0 ? preferenceTags.join(" / ") : "待 AI 进一步分析";
+  const matchLabel = candidate.matchReason ? `命中依据：${candidate.matchReason}` : "已纳入候选池，等待进一步筛选";
+  return `距你约 ${distanceLabel}，当前归类为 ${preferenceLabel}。${matchLabel}。`;
 }
 
 /* ── Run preferences form components ── */
@@ -294,6 +318,8 @@ export function PhotoThemesControl({ selected, onChange }: { selected: string[];
 
 export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunChange, onPhotoChange, geoStatus, onRelocate, isGenerating, currentWeather, poiCandidates, result, onNavigate }: FormSectionProps) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [activePoi, setActivePoi] = useState<any>(null);
+  const [candidateView, setCandidateView] = useState<"usable" | "all">("usable");
   const location = scenarioId === "run_tomorrow" ? runForm.location : photoForm.location;
 
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -302,10 +328,34 @@ export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunCh
   const poiMarkersRef = useRef<Map<string, any>>(new Map());
   const infoWindowRef = useRef<any>(null);
   const routingPluginRef = useRef<any>(null);
+  
+  const resultRef = useRef(result);
+  resultRef.current = result;
+  
+  const locationRef = useRef(location);
+  locationRef.current = location;
+  
+  const selectedPoisRef = useRef<Map<string, any>>(new Map());
 
   const activeRadiusMeter = scenarioId === "photo_week"
     ? (photoForm.preferences?.mobilityRadiusKm ?? 12) * 1000
     : (runForm.preferences?.preferredDistanceKm?.max ?? 8) * 500;
+  const candidatePool = poiCandidates ?? {
+    rawCandidates: [],
+    usableCandidates: [],
+    recommendedCandidates: [],
+    minimumSatisfied: false
+  };
+  const preferredCandidates = candidateView === "all"
+    ? candidatePool.rawCandidates
+    : (candidatePool.usableCandidates.length > 0 ? candidatePool.usableCandidates : candidatePool.rawCandidates);
+  const canToggleCandidateView = candidatePool.rawCandidates.length > candidatePool.usableCandidates.length;
+
+  useEffect(() => {
+    if (!canToggleCandidateView) {
+      setCandidateView("usable");
+    }
+  }, [canToggleCandidateView]);
 
   useEffect(() => {
     (window as any)._AMapSecurityConfig = {
@@ -314,7 +364,7 @@ export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunCh
     AMapLoader.load({
       key: import.meta.env.VITE_AMAP_JS_KEY || "2d201c10d7a04910ea0f05fbc316f728",
       version: "2.0",
-      plugins: ["AMap.Scale", "AMap.ToolBar", "AMap.Circle"],
+      plugins: ["AMap.Scale", "AMap.ToolBar", "AMap.Circle", "AMap.Walking"],
     }).then((AMap) => {
       if (!mapContainer.current) return;
       const map = new AMap.Map(mapContainer.current, {
@@ -324,6 +374,10 @@ export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunCh
         rotation: -15,
         center: [location.longitude, location.latitude],
         mapStyle: themeMode === "dark" ? "amap://styles/dark" : "amap://styles/whitesmoke",
+      });
+
+      map.on('click', () => {
+         setActivePoi(null);
       });
 
       mapRef.current = map;
@@ -399,8 +453,16 @@ export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunCh
           result.days.forEach((d: any) => d.spots.forEach((s: any) => selectedPois.set(s.name, s)));
        }
     }
+    selectedPoisRef.current = selectedPois;
 
-    const currentCandidates = poiCandidates || [];
+    const currentCandidates = [...preferredCandidates];
+    const visibleNames = new Set(currentCandidates.map((candidate) => candidate.name));
+    for (const candidate of candidatePool.rawCandidates) {
+      if (selectedPois.has(candidate.name) && !visibleNames.has(candidate.name)) {
+        currentCandidates.push(candidate);
+        visibleNames.add(candidate.name);
+      }
+    }
     const newMarkersMap = new Map<string, any>();
     const currentNames = new Set(currentCandidates.map((c: any) => c.name));
 
@@ -418,16 +480,17 @@ export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunCh
     currentCandidates.forEach((candidate: any) => {
       const isSelected = result && selectedPois.has(candidate.name);
       const isFaded = result && !isSelected;
+      const isUsable = candidatePool.usableCandidates.some((item) => item.name === candidate.name);
       
       let markerHtml = "";
       if (isSelected) {
-         markerHtml = `<div class="bg-surface/80 backdrop-blur-md rounded-full px-3 py-1 shadow-lg border border-primary/30 text-[11px] font-bold text-primary pointer-events-auto transition-transform hover:scale-105 flex items-center gap-1"><span class="text-xs">✨</span> ${candidate.name}</div>`;
+         markerHtml = `<div class="bg-surface/80 backdrop-blur-md rounded-full px-3 py-1 shadow-lg border border-primary/30 text-[11px] font-bold text-primary pointer-events-auto transition-transform hover:scale-105 flex items-center gap-1 whitespace-nowrap"><span class="text-xs">✨</span> ${candidate.name}</div>`;
       } else if (isFaded) {
          markerHtml = `<div class="bg-surface/30 backdrop-blur-sm rounded-full w-3 h-3 shadow-sm border border-white/10 opacity-30 transition-all"></div>`;
       } else {
-         markerHtml = `<div class="bg-surface backdrop-blur-md rounded-full w-5 h-5 flex items-center justify-center text-[10px] shadow-sm border border-primary/30 relative">
+         markerHtml = `<div class="bg-surface backdrop-blur-md rounded-full w-5 h-5 flex items-center justify-center text-[10px] shadow-sm border ${isUsable ? "border-primary/30" : "border-white/20"} relative">
             ${isGenerating ? '<div class="absolute inset-0 rounded-full border-t border-primary animate-spin"></div>' : ''}
-            <div class="w-1.5 h-1.5 rounded-full bg-primary/80"></div>
+            <div class="w-1.5 h-1.5 rounded-full ${isUsable ? "bg-primary/80" : "bg-white/50"}"></div>
          </div>`;
       }
 
@@ -444,32 +507,12 @@ export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunCh
          });
          
          marker.on('click', () => {
-             if (result && selectedPois.has(candidate.name)) {
-                 const selectedData = selectedPois.get(candidate.name);
-                 const contentDiv = document.createElement("div");
-                 contentDiv.className = "bg-surface/95 backdrop-blur-2xl rounded-2xl p-4 shadow-[0_16px_48px_rgba(0,0,0,0.6)] border border-primary/20 flex flex-col gap-2 w-64 pointer-events-auto";
-                 contentDiv.innerHTML = `
-                    <div class="font-bold text-base text-primary">${candidate.name}</div>
-                    <div class="flex gap-1 flex-wrap mt-1">${(candidate.tags || candidate.themes || candidate.terrains || []).map((t: string) => `<span class="px-1.5 py-0.5 rounded text-[10px] bg-white/5 text-secondary border border-white/5">${t}</span>`).join('')}</div>
-                    <div class="text-xs text-secondary mt-1 leading-relaxed">${selectedData.why || selectedData.tip || selectedData.reason || ''}</div>
-                    <button id="amap-route-btn" class="mt-3 w-full py-2.5 bg-primary text-base-bg font-bold rounded-xl text-sm transition-opacity cursor-pointer hover:opacity-90">在地图上寻路</button>
-                    ${selectedData.navigationUrl ? `<a href="${selectedData.navigationUrl}" target="_blank" class="mt-1 w-full py-2 text-center text-tertiary text-xs hover:text-primary transition-colors">打开第三方导航</a>` : ''}
-                 `;
-                 
-                 contentDiv.querySelector("#amap-route-btn")?.addEventListener("click", () => {
-                     drawRoute(location, candidate.coordinates);
-                 });
-
-                 if (!infoWindowRef.current) {
-                    infoWindowRef.current = new (window as any).AMap.InfoWindow({
-                       isCustom: true,
-                       autoMove: true,
-                       offset: new (window as any).AMap.Pixel(0, -10)
-                    });
-                 }
-                 infoWindowRef.current.setContent(contentDiv);
-                 infoWindowRef.current.open(mapRef.current, [candidate.coordinates.longitude, candidate.coordinates.latitude]);
-             }
+             const currentResult = resultRef.current;
+             const selectedData = selectedPoisRef.current.get(candidate.name);
+             
+             setActivePoi({ candidate, data: currentResult && selectedData ? selectedData : null });
+             mapRef.current.panTo([candidate.coordinates.longitude, candidate.coordinates.latitude]);
+             setTimeout(() => mapRef.current.panBy(0, 100), 100);
          });
       }
       newMarkersMap.set(candidate.name, marker);
@@ -477,7 +520,7 @@ export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunCh
 
     poiMarkersRef.current = newMarkersMap;
 
-  }, [poiCandidates, isGenerating, result]);
+  }, [candidatePool.rawCandidates, candidatePool.usableCandidates, preferredCandidates, isGenerating, result]);
 
   useEffect(() => {
     if (circleRef.current) {
@@ -508,6 +551,25 @@ export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunCh
            </div>
         )}
 
+        {canToggleCandidateView && (
+          <div className="absolute top-16 right-4 z-30 pointer-events-auto flex items-center gap-1 rounded-full border border-white/10 bg-surface/55 p-1 backdrop-blur-xl shadow-lg">
+            <button
+              type="button"
+              onClick={() => setCandidateView("usable")}
+              className={`px-3 py-1.5 rounded-full text-[11px] font-medium transition-colors cursor-pointer ${candidateView === "usable" ? "bg-white text-black" : "text-secondary hover:text-primary"}`}
+            >
+              可用 POI
+            </button>
+            <button
+              type="button"
+              onClick={() => setCandidateView("all")}
+              className={`px-3 py-1.5 rounded-full text-[11px] font-medium transition-colors cursor-pointer ${candidateView === "all" ? "bg-white text-black" : "text-secondary hover:text-primary"}`}
+            >
+              全部候选
+            </button>
+          </div>
+        )}
+
         {/* Scenario-specific Floating MAP Tools */}
           {scenarioId === "run_tomorrow" ? (
             <>
@@ -526,7 +588,7 @@ export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunCh
           )}
 
           {/* Floating Location Badge */}
-          <div className="mt-auto pointer-events-auto flex items-center justify-center w-full">
+          <div className={`mt-auto pointer-events-auto flex items-center justify-center w-full transition-opacity duration-300 ${activePoi ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
             <div className="bg-surface/80 backdrop-blur-lg px-4 py-2 rounded-full border border-white/10 shadow-lg flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className={`w-2 h-2 rounded-full ${geoStatus === "detecting" ? "bg-accent-indigo animate-pulse" : "bg-accent-green"}`}></div>
               <div className="text-[12px] text-primary tracking-tight truncate max-w-[200px]">
@@ -544,6 +606,41 @@ export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunCh
               </button>
             </div>
           </div>
+
+          {/* Active POI Bottom Sheet */}
+          {activePoi && (
+            <div className="absolute inset-x-0 bottom-4 px-4 sm:px-6 w-full max-w-md mx-auto pointer-events-auto z-50">
+              <div className="bg-surface/95 backdrop-blur-3xl rounded-3xl p-5 shadow-[0_24px_64px_rgba(0,0,0,0.8)] border border-primary/20 flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-8 duration-300">
+                 <div className="flex justify-between items-start gap-2">
+                   <div className="flex-1 min-w-0">
+                      <h3 className="font-bold text-lg text-primary truncate">{activePoi.candidate.name}</h3>
+                      <div className="flex gap-1.5 flex-wrap mt-1.5">
+                         {buildCandidateTags(activePoi.candidate).map((t: string) => (
+                            <span key={t} className="px-1.5 py-0.5 rounded-md text-[10px] bg-white/5 text-secondary border border-white/5">{t}</span>
+                         ))}
+                      </div>
+                   </div>
+                   <button onClick={() => setActivePoi(null)} className="shrink-0 w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-tertiary hover:text-primary transition-colors cursor-pointer border border-white/5">
+                      <Icon icon="lucide:x" />
+                   </button>
+                 </div>
+                 <div className="text-sm text-secondary leading-relaxed max-h-[160px] overflow-y-auto no-scrollbar scroll-smooth">
+                   {activePoi.data?.why || activePoi.data?.tip || activePoi.data?.reason || buildCandidateDescription(activePoi.candidate)}
+                 </div>
+                 
+                 <div className="flex gap-2 mt-2 pt-2 border-t border-white/5">
+                   <button onClick={() => { setActivePoi(null); drawRoute(locationRef.current, activePoi.candidate.coordinates); }} className="flex-1 h-11 bg-primary text-base-bg font-bold rounded-xl text-sm transition-opacity hover:opacity-90 flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-primary/20">
+                     <Icon icon="lucide:route" className="text-base" /> 在地图上寻路
+                   </button>
+                   {activePoi.data.navigationUrl && (
+                      <a href={activePoi.data.navigationUrl} target="_blank" rel="noreferrer" className="w-11 h-11 rounded-xl bg-white/5 flex items-center justify-center text-tertiary hover:text-primary transition-colors border border-white/10 shrink-0 cursor-pointer">
+                        <Icon icon="lucide:external-link" className="text-base" />
+                      </a>
+                   )}
+                 </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
   );

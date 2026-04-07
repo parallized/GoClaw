@@ -130,6 +130,38 @@ export const planExecutionLogEventSchema = z.object({
   entry: planExecutionLogEntrySchema
 });
 
+export const poiCandidateQualityTierSchema = z.enum(["raw", "usable", "recommended"]);
+export type PoiCandidateQualityTier = z.infer<typeof poiCandidateQualityTierSchema>;
+
+export const pointOfInterestCandidateSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  coordinates: coordinatesSchema,
+  distanceMeters: z.number().nonnegative(),
+  category: z.enum(["run", "photo"]),
+  tags: z.array(z.string()),
+  themes: z.array(photoThemeSchema),
+  terrains: z.array(runTerrainSchema),
+  rawTags: z.record(z.string()),
+  source: z.string().min(1).optional(),
+  matchReason: z.string().min(1).optional(),
+  qualityTier: poiCandidateQualityTierSchema.optional()
+});
+export type PointOfInterestCandidate = z.infer<typeof pointOfInterestCandidateSchema>;
+
+export const planWeatherDataPayloadSchema = z.object({
+  label: z.string()
+});
+export type PlanWeatherDataPayload = z.infer<typeof planWeatherDataPayloadSchema>;
+
+export const planCandidatesDataPayloadSchema = z.object({
+  rawCandidates: z.array(pointOfInterestCandidateSchema),
+  usableCandidates: z.array(pointOfInterestCandidateSchema),
+  recommendedCandidates: z.array(pointOfInterestCandidateSchema).optional(),
+  minimumSatisfied: z.boolean()
+});
+export type PlanCandidatesDataPayload = z.infer<typeof planCandidatesDataPayloadSchema>;
+
 // Moved down to fix circular dependency with planResultSchema
 
 
@@ -212,14 +244,25 @@ export const planExecutionErrorEventSchema = z.object({
   timestamp: z.string()
 });
 
-export const planExecutionDataEventSchema = z.object({
+export const planExecutionWeatherDataEventSchema = z.object({
   type: z.literal("data"),
-  dataType: z.enum(["weather", "candidates"]),
-  payload: z.unknown(),
+  dataType: z.literal("weather"),
+  payload: planWeatherDataPayloadSchema,
   timestamp: z.string()
 });
 
-export const planExecutionStreamEventSchema = z.discriminatedUnion("type", [
+export const planExecutionCandidatesDataEventSchema = z.object({
+  type: z.literal("data"),
+  dataType: z.literal("candidates"),
+  payload: planCandidatesDataPayloadSchema,
+  timestamp: z.string()
+});
+export const planExecutionDataEventSchema = z.union([
+  planExecutionWeatherDataEventSchema,
+  planExecutionCandidatesDataEventSchema
+]);
+
+export const planExecutionStreamEventSchema = z.union([
   planExecutionStartEventSchema,
   planExecutionStageEventSchema,
   planExecutionLogEventSchema,

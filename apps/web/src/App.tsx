@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Icon } from "@iconify/react";
 import type {
+  PlanCandidatesDataPayload,
   PhotoWeekRequest,
   PlanExecutionLogEntry,
   PlanExecutionStage,
@@ -48,6 +49,13 @@ const defaultCollectionState: CollectionState = {
   preferredMode: "walk"
 };
 
+const emptyPoiCandidates: PlanCandidatesDataPayload = {
+  rawCandidates: [],
+  usableCandidates: [],
+  recommendedCandidates: [],
+  minimumSatisfied: false
+};
+
 export function App() {
   const [scenarios, setScenarios] = useState<ScenarioManifest[]>([]);
   const [scenarioId, setScenarioId] = useState<ScenarioId>(defaultScenarioId);
@@ -59,7 +67,7 @@ export function App() {
   const [appStep, setAppStep] = useState<AppStep>("scenario");
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [currentWeather, setCurrentWeather] = useState<string>("");
-  const [poiCandidates, setPoiCandidates] = useState<any[]>([]);
+  const [poiCandidates, setPoiCandidates] = useState<PlanCandidatesDataPayload>(emptyPoiCandidates);
   const [theme, setTheme] = useState<"light" | "dark" | "auto">("auto");
   const [overlayPanel, setOverlayPanel] = useState<OverlayPanelState>(null);
   const [collection, setCollection] = useState<CollectionState>(defaultCollectionState);
@@ -165,7 +173,7 @@ export function App() {
     setResult(null);
     setIsGenerating(true);
     setCurrentWeather("");
-    setPoiCandidates([]);
+    setPoiCandidates(emptyPoiCandidates);
     setExecutionStages([]);
     setExecutionStageStatuses({});
     closeOverlayPanel();
@@ -205,9 +213,9 @@ export function App() {
               break;
             case "data":
               if (event.dataType === "weather") {
-                setCurrentWeather((event.payload as { label: string }).label);
+                setCurrentWeather(event.payload.label);
               } else if (event.dataType === "candidates") {
-                setPoiCandidates(event.payload as any[]);
+                setPoiCandidates(event.payload);
               }
               break;
           }
