@@ -55,7 +55,29 @@ function makeForecast(startDate: string): WeatherForecast {
   return { timezone: "Asia/Shanghai", hourly, daily };
 }
 
-function makeContext(aiProvider: AiProvider | null = null): ScenarioPlannerContext {
+function makePhotoAiProvider(
+  dates: string[],
+  spotNames: string[] = ["外滩", "豫园"]
+): AiProvider {
+  return {
+    name: "mock-ai",
+    generateText: async () => JSON.stringify({
+      tips: ["AI 建议按题材分配停留时间", "AI 建议优先走主景再补细节"],
+      days: dates.map((date) => ({
+        date,
+        spots: spotNames.map((name, index) => ({
+          name,
+          reason: `${name} 更适合当天的拍摄氛围和主题取向。`,
+          way: `${name} 建议从第 ${index + 1} 个观察角度开始拍。`,
+          cameraSummary: `${name} 优先控制曝光，再决定是否压高光。`,
+          tip: `${name} 可以先停留一圈，再决定主机位。`
+        }))
+      }))
+    })
+  };
+}
+
+function makeContext(aiProvider?: AiProvider | null): ScenarioPlannerContext {
   const forecast = makeForecast("2026-03-22");
   const pois = [
     makePoi("p1", "外滩"),
@@ -88,7 +110,7 @@ function makeContext(aiProvider: AiProvider | null = null): ScenarioPlannerConte
       name: "mock-nav",
       buildNavigationUrl: (coords, label) => `https://nav.test/${label}`
     },
-    aiProvider
+    aiProvider: aiProvider === undefined ? makePhotoAiProvider(forecast.daily.map((day) => day.date)) : aiProvider
   };
 }
 
@@ -97,41 +119,36 @@ describe("photoWeekScenario - AI enhancement", () => {
     mock.restore();
   });
 
-  it("produces a valid plan without AI provider", async () => {
+  it("returns 503 when AI provider is unavailable", async () => {
     const context = makeContext(null);
-    const result = await photoWeekScenario.plan(context, {
+    await expect(photoWeekScenario.plan(context, {
       location: { latitude: 31.23, longitude: 121.47 },
       timezone: "Asia/Shanghai"
+    })).rejects.toMatchObject({
+      status: 503
     });
-
-    expect(result.type).toBe("photo_week");
-    expect(result.city).toBe("上海");
-    expect(result.days.length).toBe(7);
-    expect(result.meta.aiEnhanced).toBe(false);
-    expect(result.meta.process.length).toBeGreaterThanOrEqual(1);
-    expect(result.meta.process[0]?.title).toBeTruthy();
-    expect(result.tips.length).toBeGreaterThanOrEqual(1);
   });
 
   it("enhances plan with AI provider", async () => {
     const aiResponse = JSON.stringify({
       tips: ["AI增强提示1", "AI增强提示2"],
-      days: [{
-        date: "2026-03-22",
+      days: makeForecast("2026-03-22").daily.map((day) => ({
+        date: day.date,
         spots: [{
           name: "外滩",
-          reason: "AI润色的拍摄理由",
-          way: "AI润色的拍摄方式",
-          cameraSummary: "AI润色的参数建议",
-          tip: "AI润色的小贴士"
+          reason: day.date === "2026-03-22" ? "AI润色的拍摄理由" : `${day.date} 的 AI 理由`,
+          way: day.date === "2026-03-22" ? "AI润色的拍摄方式" : `${day.date} 的 AI 方式`,
+          cameraSummary: day.date === "2026-03-22" ? "AI润色的参数建议" : `${day.date} 的 AI 参数`,
+          tip: day.date === "2026-03-22" ? "AI润色的小贴士" : `${day.date} 的 AI 提示`
         }]
-      }]
+      }))
     });
 
     const aiProvider: AiProvider = {
       name: "mock-ai",
       generateText: async (input) => {
         expect(input.system).toContain("description");
+        expect(input.system).toContain("不要写“提前 15 分钟到场观察光位和人流”");
         expect(input.user).toContain('"description"');
         expect(input.user).toContain("外滩");
         return aiResponse;
@@ -157,45 +174,43 @@ describe("photoWeekScenario - AI enhancement", () => {
     }
   });
 
-  it("falls back gracefully when AI returns invalid JSON", async () => {
+  it("returns 503 when AI returns invalid JSON", async () => {
     const aiProvider: AiProvider = {
       name: "mock-ai",
       generateText: async () => "not valid json at all"
     };
 
     const context = makeContext(aiProvider);
-    const result = await photoWeekScenario.plan(context, {
+    await expect(photoWeekScenario.plan(context, {
       location: { latitude: 31.23, longitude: 121.47 },
       timezone: "Asia/Shanghai"
+    })).rejects.toMatchObject({
+      status: 503
     });
-
-    // Should still get a valid plan, just not AI-enhanced
-    expect(result.type).toBe("photo_week");
-    expect(result.days.length).toBe(7);
   });
 
-  it("falls back to distinct base reasons when AI reuses the same photo reason template", async () => {
+  it("returns 503 when AI reuses the same photo reason template", async () => {
     const aiResponse = JSON.stringify({
       tips: ["注意天气变化"],
-      days: [{
-        date: "2026-03-22",
+      days: makeForecast("2026-03-22").daily.map((day) => ({
+        date: day.date,
         spots: [
           {
             name: "外滩",
-            reason: "作为初学者，建议提前 15 分钟到场观察光位和人流，再决定主机位。",
+            reason: "统一的拍摄理由模板",
             way: "统一模板",
-            cameraSummary: "统一模板",
-            tip: "统一模板"
+            cameraSummary: "统一模板参数",
+            tip: "统一模板提示"
           },
           {
             name: "豫园",
-            reason: "作为初学者，建议提前 15 分钟到场观察光位和人流，再决定主机位。",
+            reason: "统一的拍摄理由模板",
             way: "统一模板",
-            cameraSummary: "统一模板",
-            tip: "统一模板"
+            cameraSummary: "统一模板参数二",
+            tip: "统一模板提示二"
           }
         ]
-      }]
+      }))
     });
 
     const aiProvider: AiProvider = {
@@ -203,34 +218,43 @@ describe("photoWeekScenario - AI enhancement", () => {
       generateText: async () => aiResponse
     };
 
-    const result = await photoWeekScenario.plan(makeContext(aiProvider), {
+    await expect(photoWeekScenario.plan(makeContext(aiProvider), {
       location: { latitude: 31.23, longitude: 121.47 },
       timezone: "Asia/Shanghai"
+    })).rejects.toMatchObject({
+      status: 503
     });
-
-    const firstDay = result.days.find((d) => d.date === "2026-03-22");
-    expect(firstDay?.spots.length).toBeGreaterThanOrEqual(2);
-    expect(new Set(firstDay?.spots.map((spot) => spot.reason)).size).toBe(firstDay?.spots.length);
   });
 
-  it("falls back gracefully when AI throws an error", async () => {
+  it("returns 503 when AI throws an error", async () => {
     const aiProvider: AiProvider = {
       name: "mock-ai",
       generateText: async () => { throw new Error("AI service down"); }
     };
 
     const context = makeContext(aiProvider);
-    const result = await photoWeekScenario.plan(context, {
+    await expect(photoWeekScenario.plan(context, {
       location: { latitude: 31.23, longitude: 121.47 },
       timezone: "Asia/Shanghai"
+    })).rejects.toMatchObject({
+      status: 503
     });
-
-    expect(result.type).toBe("photo_week");
-    expect(result.meta.aiEnhanced).toBe(false);
   });
 
   it("handles AI response wrapped in markdown code fence", async () => {
-    const aiResponse = '```json\n{"tips":["fenced tip"],"days":[]}\n```';
+    const aiResponse = `\`\`\`json\n${JSON.stringify({
+      tips: ["fenced tip"],
+      days: makeForecast("2026-03-22").daily.map((day) => ({
+        date: day.date,
+        spots: [{
+          name: "外滩",
+          reason: `${day.date} 的 fenced 理由`,
+          way: `${day.date} 的 fenced 方式`,
+          cameraSummary: `${day.date} 的 fenced 参数`,
+          tip: `${day.date} 的 fenced 提示`
+        }]
+      }))
+    })}\n\`\`\``;
     const aiProvider: AiProvider = {
       name: "mock-ai",
       generateText: async () => aiResponse
@@ -283,7 +307,7 @@ describe("photoWeekScenario - AI enhancement", () => {
         name: "mock-nav",
         buildNavigationUrl: (coords, label) => `https://nav.test/${label}`
       },
-      aiProvider: null
+      aiProvider: makePhotoAiProvider(forecast.daily.map((day) => day.date), ["外滩"])
     };
 
     const result = await photoWeekScenario.plan(context, {

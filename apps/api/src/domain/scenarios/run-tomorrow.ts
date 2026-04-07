@@ -14,7 +14,7 @@ import type { ScenarioDefinition, ScenarioPlannerContext } from "../scenario-def
 import { extractJsonBlock, safeJsonParse } from "../../lib/json-parser";
 import { AppError, toErrorMessage } from "../../lib/errors";
 import { describePointOfInterest, withPoiDescription } from "../../lib/poi-description";
-import { emitPlanData, logPlanExecution, markExecutionStage, withExecutionStage } from "../../lib/plan-execution";
+import { emitPlanData, logPlanExecution, withExecutionStage } from "../../lib/plan-execution";
 import { scoreRunHour, summarizeDailyWeather } from "../../lib/weather";
 
 const RUN_STAGE_IDS = {
@@ -24,6 +24,8 @@ const RUN_STAGE_IDS = {
   routing: "run.routing",
   ai: "run.ai"
 } as const;
+
+const RUN_AI_REQUIRED_ERROR = "AI 跑步建议暂时不可用。为避免返回模板化推荐，请稍后重试。";
 
 const DEFAULT_RUN_WINDOW: TimeWindow = {
   from: "05:00",
@@ -462,23 +464,6 @@ function normalizeRunAiAnalysis(value: unknown): RunAiAnalysis | null {
   };
 }
 
-function chooseDistinctCopy(candidate: string | undefined, fallback: string, used: Set<string>): string {
-  const trimmed = candidate?.trim();
-  if (!trimmed) {
-    used.add(normalizeCopy(fallback));
-    return fallback;
-  }
-
-  const normalized = normalizeCopy(trimmed);
-  if (!normalized || normalized.length < 8 || used.has(normalized)) {
-    used.add(normalizeCopy(fallback));
-    return fallback;
-  }
-
-  used.add(normalized);
-  return trimmed;
-}
-
 function pickRouteSlot(route: RoutedCandidate, scoredHours: ScoredHour[], framedWindow: TimeWindow, usedTimes: Set<string>): ScheduledRouteSlot {
   const framedEnd = timeToMinutes(framedWindow.to);
   const fittingHours = scoredHours.filter(({ hour }) => timeToMinutes(isoToTime(hour.time)) + Math.max(30, route.estTimeMin) <= framedEnd);
@@ -581,7 +566,7 @@ function buildRunProcessSteps(context: ScenarioPlannerContext, routeCount?: numb
       title: "综合推荐",
       detail: context.aiProvider
         ? "正在结合用户标签偏好分析真实候选路线，并生成最终推荐说明。"
-        : "当前未启用 AI 润色，直接返回基于真实数据生成的确定性结果。",
+        : "当前必须依赖 AI 生成最终推荐；若 AI 不可用，将停止返回模板化建议。",
       provider: context.aiProvider?.name,
       outcome: context.aiProvider ? "success" : "skipped"
     }
@@ -641,13 +626,13 @@ async function analyzeRunCandidates(
     const parsed = safeJsonParse<unknown>(extractJsonBlock(response));
     const normalized = normalizeRunAiAnalysis(parsed);
     if (!normalized) {
-      logPlanExecution("warn", "AI 返回内容无法解析，保留原始跑步结果");
+      logPlanExecution("warn", "AI 返回内容无法解析，将停止返回跑步推荐");
       return null;
     }
 
     return normalized;
   } catch (error) {
-    logPlanExecution("warn", "AI 路线分析失败，保留原始跑步结果", toErrorMessage(error));
+    logPlanExecution("warn", "AI 路线分析失败，将停止返回跑步推荐", toErrorMessage(error));
     return null;
   }
 }
@@ -715,6 +700,57 @@ function buildRunRoutes(
       poiCoordinates: route.poi.coordinates
     };
   });
+}
+
+function buildStrictRunRoutes(
+  candidates: RoutedCandidate[],
+  weatherData: {
+    scoredHours: ScoredHour[];
+    framedWindow: TimeWindow;
+  },
+  aiRoutes: RunAiRoute[]
+): RunRoute[] | null {
+  const usedTimes = new Set<string>();
+  const byName = new Map(candidates.map((candidate) => [candidate.poi.name, candidate]));
+  const usedNames = new Set<string>();
+  const usedWhy = new Set<string>();
+  const routes: RunRoute[] = [];
+
+  for (const route of aiRoutes) {
+    const matched = byName.get(route.name);
+    const why = route.why?.trim();
+    if (!matched || !why || usedNames.has(route.name)) {
+      continue;
+    }
+
+    const normalizedWhy = normalizeCopy(why);
+    if (!normalizedWhy || usedWhy.has(normalizedWhy)) {
+      return null;
+    }
+
+    usedNames.add(route.name);
+    usedWhy.add(normalizedWhy);
+
+    const slot = pickRouteSlot(matched, weatherData.scoredHours, weatherData.framedWindow, usedTimes);
+    routes.push({
+      name: matched.poi.name,
+      distanceKm: matched.distanceKm,
+      estTimeMin: matched.estTimeMin,
+      recommendedTime: slot.recommendedTime,
+      timeWindow: slot.timeWindow,
+      why,
+      tags: matched.poi.terrains,
+      navigationUrl: matched.navigationUrl,
+      routeSource: matched.routeSource,
+      poiCoordinates: matched.poi.coordinates
+    });
+
+    if (routes.length >= 3) {
+      break;
+    }
+  }
+
+  return routes.length > 0 ? routes : null;
 }
 
 export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema, typeof runPlanSchema> = {
@@ -888,29 +924,32 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
     };
 
     if (!context.aiProvider) {
-      markExecutionStage(RUN_STAGE_IDS.ai, "skipped");
-      logPlanExecution("info", "未启用 AI 综合分析，直接返回基于真实数据的结果", undefined, RUN_STAGE_IDS.ai);
-      return basePlan;
+      logPlanExecution("error", "未启用 AI 综合分析，停止返回模板化跑步建议", undefined, RUN_STAGE_IDS.ai);
+      throw new AppError(RUN_AI_REQUIRED_ERROR, 503);
     }
 
     return await withExecutionStage(RUN_STAGE_IDS.ai, async () => {
       logPlanExecution("info", "开始执行 AI 路线分析与偏好对齐");
       const aiAnalysis = await analyzeRunCandidates(context, input, weatherData, routedCandidates);
       if (!aiAnalysis) {
-        logPlanExecution("info", "AI 未产出可用分析结果，已保留原始跑步结果");
-        return basePlan;
+        logPlanExecution("error", "AI 未产出可用分析结果，停止返回模板化跑步结果");
+        throw new AppError(RUN_AI_REQUIRED_ERROR, 503);
       }
 
-      const usedCopies = new Set<string>();
-      const reason = chooseDistinctCopy(aiAnalysis.reason, basePlan.reason, usedCopies);
+      const reason = aiAnalysis.reason?.trim();
       const aiOrderedCandidates = orderRunCandidates(routedCandidates, aiAnalysis.routes);
-      const aiRoutes = buildRunRoutes(aiOrderedCandidates, weatherData, usedCopies, aiAnalysis.routes);
+      const aiRoutes = buildStrictRunRoutes(aiOrderedCandidates, weatherData, aiAnalysis.routes);
       const aiTips = dedupeTextList(aiAnalysis.tips).slice(0, 4);
+      if (!reason || aiTips.length === 0 || !aiRoutes) {
+        logPlanExecution("error", "AI 跑步建议未提供完整且不重复的推荐文案");
+        throw new AppError(RUN_AI_REQUIRED_ERROR, 503);
+      }
+
       const enhanced: RunPlan = {
         ...basePlan,
         reason,
         routes: aiRoutes,
-        tips: aiTips.length > 0 ? aiTips : basePlan.tips,
+        tips: aiTips,
         meta: {
           ...basePlan.meta,
           aiEnhanced: true,
@@ -918,10 +957,7 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
         }
       };
 
-      logPlanExecution(
-        "info",
-        enhanced.meta.aiEnhanced ? "AI 路线分析完成" : "AI 未产出可用结果，已保留原始文案"
-      );
+      logPlanExecution("info", "AI 路线分析完成");
       return enhanced;
     });
   }

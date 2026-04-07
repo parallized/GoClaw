@@ -15,7 +15,7 @@ import type { ScenarioDefinition, ScenarioPlannerContext } from "../scenario-def
 import { extractJsonBlock, safeJsonParse } from "../../lib/json-parser";
 import { AppError, toErrorMessage } from "../../lib/errors";
 import { describePointOfInterest, withPoiDescription } from "../../lib/poi-description";
-import { emitPlanData, logPlanExecution, markExecutionStage, withExecutionStage } from "../../lib/plan-execution";
+import { emitPlanData, logPlanExecution, withExecutionStage } from "../../lib/plan-execution";
 import { classifyLight, getWeatherLabel, summarizeDailyWeather } from "../../lib/weather";
 
 const PHOTO_STAGE_IDS = {
@@ -25,6 +25,8 @@ const PHOTO_STAGE_IDS = {
   navigation: "photo.navigation",
   ai: "photo.ai"
 } as const;
+
+const PHOTO_AI_REQUIRED_ERROR = "AI 摄影建议暂时不可用。为避免返回模板化推荐，请稍后重试。";
 
 type PreparedPhotoSpot = {
   poi: PointOfInterest;
@@ -142,20 +144,44 @@ function buildPhotoWay(light: ReturnType<typeof classifyLight>, poi: PointOfInte
   return "利用云层或城市元素做画面分区，保持前中后景层次，让画面更完整。";
 }
 
-function buildPhotoTip(day: DailyWeatherPoint, themes: readonly string[]): string {
+function isPointOfInterest(value: PointOfInterest | readonly string[]): value is PointOfInterest {
+  return !Array.isArray(value);
+}
+
+function buildPhotoTip(day: DailyWeatherPoint, poiOrThemes: PointOfInterest | readonly string[]): string {
+  const poi = isPointOfInterest(poiOrThemes) ? poiOrThemes : null;
+  const themes = isPointOfInterest(poiOrThemes) ? poiOrThemes.themes : poiOrThemes;
+  const placeName = poi?.name ?? "这个点位";
+
   if (themes.includes("night")) {
-    return "夜景优先准备三脚架或稳定支撑，避免慢快门糊片。";
+    return `如果去 ${placeName} 拍夜景，优先找稳定支撑或三脚架位置，再决定是否用慢快门保留环境光。`;
   }
 
   if (day.precipitationProbabilityMax >= 45) {
-    return "降水概率较高，建议准备镜头布和防水袋，并预留室内备选机位。";
+    return `去 ${placeName} 前先看一眼周边有没有檐下、入口或室内延展空间，方便临时躲雨继续拍。`;
   }
 
   if (day.uvIndexMax >= 6) {
-    return "紫外线偏强，中午不建议长时间暴晒，可把主拍时段放到早晚。";
+    return `如果想在 ${placeName} 多停留一会儿，尽量把主拍和慢逛时间放到更柔和的早晚时段。`;
   }
 
-  return "建议提前 15 分钟到场观察光位和人流，再决定主机位。";
+  if (themes.includes("waterfront")) {
+    return `到 ${placeName} 后可以先沿水边慢慢走一小段，找同时带到倒影、岸线和远处层次的位置再开始拍。`;
+  }
+
+  if (themes.includes("architecture")) {
+    return `到 ${placeName} 后先绕主体走一圈，看看入口、立面和前景遮挡，再决定拍整体建筑还是局部细节。`;
+  }
+
+  if (themes.includes("nature")) {
+    return `到 ${placeName} 可以先找视野最开阔的一侧，再决定是拍大场景，还是借树木、岩石或水面做前景。`;
+  }
+
+  if (themes.includes("humanity") || themes.includes("urban")) {
+    return `到 ${placeName} 后先观察人流和停留点，选一个能把人物关系和环境一起带进去的位置会更有故事感。`;
+  }
+
+  return `到 ${placeName} 后先慢慢走一圈，把最有记忆点的角度和最舒服的停留位置找出来，再决定主机位。`;
 }
 
 function asTrimmedString(value: unknown): string | undefined {
@@ -242,23 +268,6 @@ function normalizeCopy(text: string): string {
   return text.replace(/[\s，。、“”‘’：:；;、,.!?！？（）()\-—]/g, "").toLowerCase();
 }
 
-function chooseDistinctCopy(candidate: string | undefined, fallback: string, used: Set<string>): string {
-  const trimmed = candidate?.trim();
-  if (!trimmed) {
-    used.add(normalizeCopy(fallback));
-    return fallback;
-  }
-
-  const normalized = normalizeCopy(trimmed);
-  if (!normalized || normalized.length < 8 || used.has(normalized)) {
-    used.add(normalizeCopy(fallback));
-    return fallback;
-  }
-
-  used.add(normalized);
-  return trimmed;
-}
-
 async function loadPhotoPois(context: ScenarioPlannerContext, location: { latitude: number; longitude: number }, radiusKm: number) {
   const radiusMeters = Math.min(30000, Math.max(4000, radiusKm * 1000));
   logPlanExecution("info", `按 ${radiusMeters} 米半径搜索摄影点位`);
@@ -334,7 +343,7 @@ function buildPhotoProcessSteps(context: ScenarioPlannerContext, dayCount?: numb
       title: "AI 综合分析",
       detail: context.aiProvider
         ? "结合用户主题偏好分析真实候选点位，挑选每日更合适的拍摄组合并生成说明。"
-        : "当前未启用 AI 润色，直接返回基于真实数据生成的确定性结果。",
+        : "当前必须依赖 AI 生成最终推荐；若 AI 不可用，将停止返回模板化建议。",
       provider: context.aiProvider?.name,
       outcome: context.aiProvider ? "success" : "skipped"
     }
@@ -379,7 +388,7 @@ function buildPreparedPhotoSpot(
       way: buildPhotoWay(light, poi),
       camera,
       cameraSummary: `建议 ${camera.iso}、${camera.aperture}、${camera.shutter}、${camera.whiteBalance}，优先确保主体清晰和高光不过曝。`,
-      tip: buildPhotoTip(day, poi.themes),
+      tip: buildPhotoTip(day, poi),
       categories: poi.themes,
       navigationUrl: navigationProvider.buildNavigationUrl(poi.coordinates, poi.name),
       poiCoordinates: poi.coordinates
@@ -387,67 +396,56 @@ function buildPreparedPhotoSpot(
   };
 }
 
-function orderPreparedPhotoSpots(
-  candidates: PreparedPhotoSpot[],
-  aiSpots?: PhotoAiSpot[],
-  limit = 2
-): PreparedPhotoSpot[] {
-  const byName = new Map(candidates.map((candidate) => [candidate.spot.name, candidate]));
-  const ordered: PreparedPhotoSpot[] = [];
-  const seen = new Set<string>();
+function buildStrictPhotoDay(
+  candidateDay: CandidatePhotoDay,
+  aiSpots?: PhotoAiSpot[]
+) {
+  const byName = new Map(candidateDay.candidates.map((candidate) => [candidate.spot.name, candidate]));
+  const usedNames = new Set<string>();
+  const usedReasons = new Set<string>();
+  const spots: PhotoSpot[] = [];
 
-  for (const spot of aiSpots ?? []) {
-    const matched = byName.get(spot.name);
-    if (!matched || seen.has(matched.spot.name)) {
+  for (const aiSpot of aiSpots ?? []) {
+    const matched = byName.get(aiSpot.name);
+    const reason = aiSpot.reason?.trim();
+    const way = aiSpot.way?.trim();
+    const cameraSummary = aiSpot.cameraSummary?.trim();
+    const tip = aiSpot.tip?.trim();
+
+    if (!matched || usedNames.has(aiSpot.name) || !reason || !way || !cameraSummary || !tip) {
       continue;
     }
 
-    seen.add(matched.spot.name);
-    ordered.push(matched);
-    if (ordered.length >= limit) {
-      return ordered;
-    }
-  }
-
-  for (const candidate of candidates) {
-    if (seen.has(candidate.spot.name)) {
-      continue;
+    const normalizedReason = normalizeCopy(reason);
+    if (!normalizedReason || usedReasons.has(normalizedReason)) {
+      return null;
     }
 
-    seen.add(candidate.spot.name);
-    ordered.push(candidate);
-    if (ordered.length >= limit) {
+    usedNames.add(aiSpot.name);
+    usedReasons.add(normalizedReason);
+    spots.push({
+      ...matched.spot,
+      reason,
+      way,
+      cameraSummary,
+      tip
+    });
+
+    if (spots.length >= 2) {
       break;
     }
   }
 
-  return ordered;
-}
+  if (spots.length === 0) {
+    return null;
+  }
 
-function buildPhotoDay(
-  candidateDay: CandidatePhotoDay,
-  selectedCandidates: PreparedPhotoSpot[],
-  aiSpots?: PhotoAiSpot[]
-) {
-  const aiByName = new Map((aiSpots ?? []).map((spot) => [spot.name, spot]));
-  const usedReasons = new Set<string>();
-  const spots: PhotoSpot[] = selectedCandidates.map(({ spot }) => {
-    const aiSpot = aiByName.get(spot.name);
-    return {
-      ...spot,
-      reason: chooseDistinctCopy(aiSpot?.reason, spot.reason, usedReasons),
-      way: aiSpot?.way?.trim() || spot.way,
-      cameraSummary: aiSpot?.cameraSummary?.trim() || spot.cameraSummary,
-      tip: aiSpot?.tip?.trim() || spot.tip
-    };
-  });
-  const categories = spots.flatMap((spot) => spot.categories);
-
+  const dayTips = Array.from(new Set(spots.map((spot) => spot.tip.trim()))).filter(Boolean);
   return {
     date: candidateDay.date,
     weather: candidateDay.weather,
     spots,
-    tips: [buildPhotoTip(candidateDay.day, categories)]
+    tips: dayTips.length > 0 ? dayTips : [spots[0]!.tip]
   };
 }
 
@@ -471,6 +469,8 @@ async function analyzePhotoCandidates(
         "每一天只能从对应 candidates 里选择 spot.name；如果用户未给 themes，就优先考虑天气契合度、拍摄效率和一周内的整体多样性。",
         "reason、way、cameraSummary、tip 只能围绕已给事实做更贴合用户偏好的表达，不要虚构新的相机数值。",
         "不同 spot 的 reason 不能套用同一个模板，至少要引用各自 description 中不同的场景信息。",
+        "tip 应该更像这个点位的停留、游玩或拍摄建议，而不是空泛提醒。",
+        "除非候选事实明确要求，否则不要写“提前 15 分钟到场观察光位和人流”这类通用建议。",
         "输出 JSON，字段仅包含 tips 和 days；days 内仅包含 date 和 spots，spots 内仅包含 name、reason、way、cameraSummary、tip。"
       ].join(""),
       user: JSON.stringify({
@@ -499,13 +499,13 @@ async function analyzePhotoCandidates(
     const parsed = safeJsonParse<unknown>(extractJsonBlock(response));
     const normalized = normalizePhotoAiAnalysis(parsed);
     if (!normalized) {
-      logPlanExecution("warn", "AI 返回内容无法解析，保留原始摄影结果");
+      logPlanExecution("warn", "AI 返回内容无法解析，将停止返回摄影推荐");
       return null;
     }
 
     return normalized;
   } catch (error) {
-    logPlanExecution("warn", "AI 摄影分析失败，保留原始摄影结果", toErrorMessage(error));
+    logPlanExecution("warn", "AI 摄影分析失败，将停止返回摄影推荐", toErrorMessage(error));
     return null;
   }
 }
@@ -587,7 +587,12 @@ export const photoWeekScenario: ScenarioDefinition<typeof photoWeekRequestSchema
       return resolvedDays;
     });
 
-    const days = candidateDays.map((day) => buildPhotoDay(day, day.candidates.slice(0, 2)));
+    const days = candidateDays.map((day) => ({
+      date: day.date,
+      weather: day.weather,
+      spots: day.candidates.slice(0, 2).map(({ spot }) => spot),
+      tips: [buildPhotoTip(day.day, day.candidates[0]?.poi ?? day.candidates.slice(0, 2).flatMap(({ spot }) => spot.categories))]
+    }));
 
     const basePlan: PhotoWeekPlan = {
       type: "photo_week",
@@ -608,38 +613,39 @@ export const photoWeekScenario: ScenarioDefinition<typeof photoWeekRequestSchema
     };
 
     if (!context.aiProvider) {
-      markExecutionStage(PHOTO_STAGE_IDS.ai, "skipped");
-      logPlanExecution("info", "未启用 AI 综合分析，直接返回基于真实数据的结果", undefined, PHOTO_STAGE_IDS.ai);
-      return basePlan;
+      logPlanExecution("error", "未启用 AI 综合分析，停止返回模板化摄影建议", undefined, PHOTO_STAGE_IDS.ai);
+      throw new AppError(PHOTO_AI_REQUIRED_ERROR, 503);
     }
 
     return await withExecutionStage(PHOTO_STAGE_IDS.ai, async () => {
       logPlanExecution("info", "开始执行 AI 摄影偏好分析");
       const aiAnalysis = await analyzePhotoCandidates(context, input, candidateDays);
       if (!aiAnalysis) {
-        logPlanExecution("info", "AI 未产出可用摄影分析结果，已保留原始计划");
-        return basePlan;
+        logPlanExecution("error", "AI 未产出可用摄影分析结果，停止返回模板化摄影计划");
+        throw new AppError(PHOTO_AI_REQUIRED_ERROR, 503);
       }
 
       const aiTips = aiAnalysis.tips.slice(0, 4);
+      const aiDays = candidateDays.map((day) => {
+        const aiDay = aiAnalysis.days.find((item) => item.date === day.date);
+        return buildStrictPhotoDay(day, aiDay?.spots);
+      });
+      if (aiTips.length === 0 || aiDays.some((day) => day === null)) {
+        logPlanExecution("error", "AI 摄影建议未提供完整且不重复的推荐文案");
+        throw new AppError(PHOTO_AI_REQUIRED_ERROR, 503);
+      }
+
       const enhanced: PhotoWeekPlan = {
         ...basePlan,
-        tips: aiTips && aiTips.length > 0 ? aiTips : basePlan.tips,
-        days: candidateDays.map((day) => {
-          const aiDay = aiAnalysis.days.find((item) => item.date === day.date);
-          const orderedCandidates = orderPreparedPhotoSpots(day.candidates, aiDay?.spots);
-          return buildPhotoDay(day, orderedCandidates, aiDay?.spots);
-        }),
+        tips: aiTips,
+        days: aiDays as NonNullable<typeof aiDays[number]>[],
         meta: {
           ...basePlan.meta,
           aiEnhanced: true
         }
       };
 
-      logPlanExecution(
-        "info",
-        enhanced.meta.aiEnhanced ? "AI 摄影分析完成" : "AI 未产出可用结果，已保留原始摄影文案"
-      );
+      logPlanExecution("info", "AI 摄影分析完成");
       return enhanced;
     });
   }

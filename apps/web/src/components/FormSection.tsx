@@ -135,6 +135,23 @@ function buildCandidateDescription(candidate: PointOfInterestCandidate) {
   return `距你约 ${distanceLabel}，更偏 ${preferenceLabel} 场景。`;
 }
 
+function buildMarkerPanelText(data: any, candidate: PointOfInterestCandidate) {
+  if (data?.why?.trim()) {
+    return data.why;
+  }
+
+  const photoCopy = [data?.reason, data?.way, data?.tip]
+    .map((item: unknown) => typeof item === "string" ? item.trim() : "")
+    .filter(Boolean)
+    .join(" ");
+
+  if (photoCopy) {
+    return photoCopy;
+  }
+
+  return buildCandidateDescription(candidate);
+}
+
 /* ── Run preferences form components ── */
 
 export function RunPaceControl({ paceMinPerKm, onChange }: { paceMinPerKm: number; onChange: (val: number) => void }) {
@@ -518,7 +535,7 @@ export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunCh
              contentDiv.innerHTML = `
                 <div class="font-bold text-lg text-primary truncate">${candidate.name}</div>
                 <div class="text-sm text-secondary leading-relaxed max-h-[160px] overflow-y-auto no-scrollbar scroll-smooth">
-                  ${data?.why || data?.tip || data?.reason || buildCandidateDescription(candidate)}
+                  ${buildMarkerPanelText(data, candidate)}
                 </div>
                 
                 <div class="flex gap-2 mt-2 pt-2 border-t border-white/5">

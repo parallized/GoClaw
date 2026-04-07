@@ -69,7 +69,21 @@ function makeForecast(): WeatherForecast {
   return { timezone: "Asia/Shanghai", hourly, daily };
 }
 
-function makeContext(aiProvider: AiProvider | null = null): ScenarioPlannerContext {
+function makeRunAiProvider(routeNames: string[] = ["世纪公园跑道", "滨江步道", "体育场环形跑道"]): AiProvider {
+  return {
+    name: "mock-ai",
+    generateText: async () => JSON.stringify({
+      reason: "AI 结合天气和地点事实整理后的跑步建议。",
+      routes: routeNames.map((name, index) => ({
+        name,
+        why: `${name} 更适合今天第 ${index + 1} 个推荐顺位。`
+      })),
+      tips: ["AI 建议先热身后出发", "AI 建议根据体感补水"]
+    })
+  };
+}
+
+function makeContext(aiProvider: AiProvider | null = makeRunAiProvider()): ScenarioPlannerContext {
   const forecast = makeForecast();
   const pois = [
     makeRunPoi("r1", "世纪公园跑道"),
@@ -126,25 +140,14 @@ describe("runTomorrowScenario - AI enhancement", () => {
     mock.restore();
   });
 
-  it("produces a valid plan without AI provider", async () => {
+  it("returns 503 when AI provider is unavailable", async () => {
     const context = makeContext(null);
-    const result = await runTomorrowScenario.plan(context, {
+    await expect(runTomorrowScenario.plan(context, {
       location: { latitude: 31.23, longitude: 121.47 },
       timezone: "Asia/Shanghai"
+    })).rejects.toMatchObject({
+      status: 503
     });
-
-    expect(result.type).toBe("run_tomorrow");
-    expect(result.city).toBe("上海");
-    expect(result.routes.length).toBeGreaterThanOrEqual(1);
-    expect(result.meta.aiEnhanced).toBe(false);
-    expect(result.meta.process.length).toBeGreaterThanOrEqual(1);
-    expect(result.meta.process[0]?.title).toBeTruthy();
-    expect(result.tips.length).toBeGreaterThanOrEqual(1);
-    expect(result.reason).toBeTruthy();
-    expect(result.bestTime).toBeTruthy();
-    expect(result.framedWindow).toEqual({ from: "05:00", to: "21:00" });
-    expect(result.routes[0]?.recommendedTime).toBeTruthy();
-    expect(result.routes[0]?.timeWindow.from).toBeTruthy();
   });
 
   it("enhances plan with AI provider", async () => {
@@ -185,7 +188,7 @@ describe("runTomorrowScenario - AI enhancement", () => {
   });
 
   it("uses framed start window to constrain best time and route windows", async () => {
-    const context = makeContext(null);
+    const context = makeContext();
     const result = await runTomorrowScenario.plan(context, {
       location: { latitude: 31.23, longitude: 121.47 },
       timezone: "Asia/Shanghai",
@@ -203,7 +206,7 @@ describe("runTomorrowScenario - AI enhancement", () => {
     expect(result.routes.every((route) => route.timeWindow.from >= "08:00" && route.timeWindow.to <= "10:00")).toBe(true);
   });
 
-  it("falls back when AI emits duplicated route reasons", async () => {
+  it("returns 503 when AI emits duplicated route reasons", async () => {
     const aiResponse = JSON.stringify({
       reason: "统一的推荐理由",
       routes: [
@@ -218,48 +221,45 @@ describe("runTomorrowScenario - AI enhancement", () => {
       generateText: async () => aiResponse
     };
 
-    const result = await runTomorrowScenario.plan(makeContext(aiProvider), {
+    await expect(runTomorrowScenario.plan(makeContext(aiProvider), {
       location: { latitude: 31.23, longitude: 121.47 },
       timezone: "Asia/Shanghai"
+    })).rejects.toMatchObject({
+      status: 503
     });
-
-    expect(new Set(result.routes.map((route) => route.why)).size).toBe(result.routes.length);
-    expect(result.tips).toEqual(["补水", "注意恢复"]);
   });
 
-  it("falls back gracefully when AI returns invalid JSON", async () => {
+  it("returns 503 when AI returns invalid JSON", async () => {
     const aiProvider: AiProvider = {
       name: "mock-ai",
       generateText: async () => "completely invalid"
     };
 
     const context = makeContext(aiProvider);
-    const result = await runTomorrowScenario.plan(context, {
+    await expect(runTomorrowScenario.plan(context, {
       location: { latitude: 31.23, longitude: 121.47 },
       timezone: "Asia/Shanghai"
+    })).rejects.toMatchObject({
+      status: 503
     });
-
-    expect(result.type).toBe("run_tomorrow");
-    expect(result.routes.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("falls back gracefully when AI throws", async () => {
+  it("returns 503 when AI throws", async () => {
     const aiProvider: AiProvider = {
       name: "mock-ai",
       generateText: async () => { throw new Error("timeout"); }
     };
 
     const context = makeContext(aiProvider);
-    const result = await runTomorrowScenario.plan(context, {
+    await expect(runTomorrowScenario.plan(context, {
       location: { latitude: 31.23, longitude: 121.47 },
       timezone: "Asia/Shanghai"
+    })).rejects.toMatchObject({
+      status: 503
     });
-
-    expect(result.type).toBe("run_tomorrow");
-    expect(result.meta.aiEnhanced).toBe(false);
   });
 
-  it("preserves original route data when AI doesn't cover all routes", async () => {
+  it("returns 503 when AI doesn't cover valid routes", async () => {
     const aiResponse = JSON.stringify({
       reason: "新理由",
       routes: [{ name: "不存在的路线", why: "不匹配" }],
@@ -272,16 +272,12 @@ describe("runTomorrowScenario - AI enhancement", () => {
     };
 
     const context = makeContext(aiProvider);
-    const result = await runTomorrowScenario.plan(context, {
+    await expect(runTomorrowScenario.plan(context, {
       location: { latitude: 31.23, longitude: 121.47 },
       timezone: "Asia/Shanghai"
+    })).rejects.toMatchObject({
+      status: 503
     });
-
-    expect(result.meta.aiEnhanced).toBe(true);
-    // Routes that AI didn't cover should keep their original `why`
-    for (const route of result.routes) {
-      expect(route.why).toBeTruthy();
-    }
   });
 
   it("prioritizes mileage-fit POIs before routing instead of only taking the nearest results", async () => {
@@ -334,7 +330,7 @@ describe("runTomorrowScenario - AI enhancement", () => {
         name: "mock-nav",
         buildNavigationUrl: (coords, label) => `https://nav.test/${label}`
       },
-      aiProvider: null
+      aiProvider: makeRunAiProvider(["江边长线绿道", "城市环形跑道"])
     };
 
     const result = await runTomorrowScenario.plan(context, {
@@ -354,8 +350,8 @@ describe("runTomorrowScenario - AI enhancement", () => {
     expect(result.routes.every((route) => route.distanceKm >= 8)).toBe(true);
   });
 
-  it("does not let terrain tags alter deterministic route selection when AI is disabled", async () => {
-    const context = makeContext(null);
+  it("does not let terrain tags alter route output when AI selection is fixed", async () => {
+    const context = makeContext(makeRunAiProvider(["世纪公园跑道", "滨江步道"]));
     const base = await runTomorrowScenario.plan(context, {
       location: { latitude: 31.23, longitude: 121.47 },
       timezone: "Asia/Shanghai"
@@ -376,7 +372,7 @@ describe("runTomorrowScenario - AI enhancement", () => {
     let requestedRadius = 0;
 
     const context: ScenarioPlannerContext = {
-      ...makeContext(null),
+      ...makeContext(makeRunAiProvider(["空谷长滩水公园", "校园操场", "滨水步道"])),
       poiProvider: {
         name: "mock-poi",
         searchRunPois: async (_location, radiusMeters) => {
@@ -407,7 +403,7 @@ describe("runTomorrowScenario - AI enhancement", () => {
 
   it("emits a structured candidate pool and keeps raw candidates even when usable POIs are below the target minimum", async () => {
     const context: ScenarioPlannerContext = {
-      ...makeContext(null),
+      ...makeContext(makeRunAiProvider(["空谷长滩水公园", "校园操场", "社区道路"])),
       poiProvider: {
         name: "mock-poi",
         searchRunPois: async () => [
@@ -439,7 +435,7 @@ describe("runTomorrowScenario - AI enhancement", () => {
 
   it("returns 503 when routing service fails for all candidates", async () => {
     const context: ScenarioPlannerContext = {
-      ...makeContext(null),
+      ...makeContext(),
       routingProvider: {
         name: "mock-routing",
         getWalkingRoute: async () => {
