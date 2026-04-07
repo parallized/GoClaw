@@ -212,12 +212,20 @@ export const planExecutionErrorEventSchema = z.object({
   timestamp: z.string()
 });
 
+export const planExecutionDataEventSchema = z.object({
+  type: z.literal("data"),
+  dataType: z.enum(["weather", "candidates"]),
+  payload: z.unknown(),
+  timestamp: z.string()
+});
+
 export const planExecutionStreamEventSchema = z.discriminatedUnion("type", [
   planExecutionStartEventSchema,
   planExecutionStageEventSchema,
   planExecutionLogEventSchema,
   planExecutionResultEventSchema,
-  planExecutionErrorEventSchema
+  planExecutionErrorEventSchema,
+  planExecutionDataEventSchema
 ]);
 export type PlanExecutionStreamEvent = z.infer<typeof planExecutionStreamEventSchema>;
 

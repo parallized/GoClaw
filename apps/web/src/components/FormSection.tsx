@@ -1,8 +1,9 @@
 import { useEffect, useId, useRef, useState } from "react";
 import AMapLoader from "@amap/amap-jsapi-loader";
 import { Icon } from "@iconify/react";
-import type { CameraSkill, PhotoTheme, RunTerrain, ScenarioId } from "@goclaw/contracts";
+import type { CameraSkill, PhotoTheme, RunTerrain, ScenarioId, PlanResult } from "@goclaw/contracts";
 import type { PhotoWeekRequest, RunPlanRequest } from "@goclaw/contracts";
+import type { ReservationTarget } from "./NavigationStack";
 
 export function getTagColorClass(value: string) {
   switch (value) {
@@ -48,7 +49,7 @@ export function getTagColorHex(value: string) {
   }
 }
 
-interface FormSectionProps {
+export interface FormSectionProps {
   scenarioId: ScenarioId;
   themeMode: "light" | "dark";
   runForm: RunPlanRequest;
@@ -57,6 +58,11 @@ interface FormSectionProps {
   onPhotoChange: (next: PhotoWeekRequest) => void;
   geoStatus: "idle" | "detecting" | "done" | "failed";
   onRelocate: () => void;
+  isGenerating?: boolean;
+  currentWeather?: string;
+  poiCandidates?: any[];
+  result?: PlanResult | null;
+  onNavigate?: (target?: ReservationTarget) => void;
 }
 
 /* ── Data ── */
@@ -286,13 +292,16 @@ export function PhotoThemesControl({ selected, onChange }: { selected: string[];
 
 /* ── Composed section ── */
 
-export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunChange, onPhotoChange, geoStatus, onRelocate }: FormSectionProps) {
+export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunChange, onPhotoChange, geoStatus, onRelocate, isGenerating, currentWeather, poiCandidates, result, onNavigate }: FormSectionProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const location = scenarioId === "run_tomorrow" ? runForm.location : photoForm.location;
 
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const circleRef = useRef<any>(null);
+  const poiMarkersRef = useRef<Map<string, any>>(new Map());
+  const infoWindowRef = useRef<any>(null);
+  const routingPluginRef = useRef<any>(null);
 
   const activeRadiusMeter = scenarioId === "photo_week"
     ? (photoForm.preferences?.mobilityRadiusKm ?? 12) * 1000
@@ -361,6 +370,115 @@ export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunCh
     }
   }, [location.longitude, location.latitude]);
 
+  function drawRoute(from: {longitude: number, latitude: number}, to: {longitude: number, latitude: number}) {
+     if (!mapRef.current) return;
+     if (infoWindowRef.current) infoWindowRef.current.close();
+     
+     (window as any).AMap.plugin('AMap.Walking', () => {
+        if (!routingPluginRef.current) {
+           routingPluginRef.current = new (window as any).AMap.Walking({
+              map: mapRef.current,
+              hideMarkers: true,
+              autoFitView: true,
+           });
+        }
+        routingPluginRef.current.clear();
+        routingPluginRef.current.search([from.longitude, from.latitude], [to.longitude, to.latitude]);
+     });
+  }
+
+  useEffect(() => {
+    if (!mapRef.current) return;
+    
+    // figure out which are final selected routes/spots if exist
+    const selectedPois = new Map<string, any>();
+    if (result) {
+       if (result.type === "run_tomorrow") {
+          result.routes.forEach((r: any) => selectedPois.set(r.name, r));
+       } else if (result.type === "photo_week") {
+          result.days.forEach((d: any) => d.spots.forEach((s: any) => selectedPois.set(s.name, s)));
+       }
+    }
+
+    const currentCandidates = poiCandidates || [];
+    const newMarkersMap = new Map<string, any>();
+    const currentNames = new Set(currentCandidates.map((c: any) => c.name));
+
+    for (const [name, marker] of poiMarkersRef.current.entries()) {
+      if (!currentNames.has(name) || (result && !selectedPois.has(name))) {
+         if (result) {
+            marker.setContent(`<div class="bg-surface/30 backdrop-blur-sm rounded-full w-3 h-3 shadow-sm border border-white/10 transition-all opacity-30"></div>`);
+            newMarkersMap.set(name, marker);
+         } else {
+            mapRef.current.remove(marker);
+         }
+      }
+    }
+
+    currentCandidates.forEach((candidate: any) => {
+      const isSelected = result && selectedPois.has(candidate.name);
+      const isFaded = result && !isSelected;
+      
+      let markerHtml = "";
+      if (isSelected) {
+         markerHtml = `<div class="bg-surface/80 backdrop-blur-md rounded-full px-3 py-1 shadow-lg border border-primary/30 text-[11px] font-bold text-primary pointer-events-auto transition-transform hover:scale-105 flex items-center gap-1"><span class="text-xs">✨</span> ${candidate.name}</div>`;
+      } else if (isFaded) {
+         markerHtml = `<div class="bg-surface/30 backdrop-blur-sm rounded-full w-3 h-3 shadow-sm border border-white/10 opacity-30 transition-all"></div>`;
+      } else {
+         markerHtml = `<div class="bg-surface backdrop-blur-md rounded-full w-5 h-5 flex items-center justify-center text-[10px] shadow-sm border border-primary/30 relative">
+            ${isGenerating ? '<div class="absolute inset-0 rounded-full border-t border-primary animate-spin"></div>' : ''}
+            <div class="w-1.5 h-1.5 rounded-full bg-primary/80"></div>
+         </div>`;
+      }
+
+      let marker = poiMarkersRef.current.get(candidate.name);
+      if (marker && (!result || isSelected || isFaded)) {
+         marker.setContent(markerHtml);
+      } else if (!marker) {
+         marker = new (window as any).AMap.Marker({
+            position: [candidate.coordinates.longitude, candidate.coordinates.latitude],
+            map: mapRef.current,
+            content: markerHtml,
+            offset: isSelected ? new (window as any).AMap.Pixel(-30, -10) : new (window as any).AMap.Pixel(-10, -10),
+            zIndex: isSelected ? 100 : 50,
+         });
+         
+         marker.on('click', () => {
+             if (result && selectedPois.has(candidate.name)) {
+                 const selectedData = selectedPois.get(candidate.name);
+                 const contentDiv = document.createElement("div");
+                 contentDiv.className = "bg-surface/95 backdrop-blur-2xl rounded-2xl p-4 shadow-[0_16px_48px_rgba(0,0,0,0.6)] border border-primary/20 flex flex-col gap-2 w-64 pointer-events-auto";
+                 contentDiv.innerHTML = `
+                    <div class="font-bold text-base text-primary">${candidate.name}</div>
+                    <div class="flex gap-1 flex-wrap mt-1">${(candidate.tags || candidate.themes || candidate.terrains || []).map((t: string) => `<span class="px-1.5 py-0.5 rounded text-[10px] bg-white/5 text-secondary border border-white/5">${t}</span>`).join('')}</div>
+                    <div class="text-xs text-secondary mt-1 leading-relaxed">${selectedData.why || selectedData.tip || selectedData.reason || ''}</div>
+                    <button id="amap-route-btn" class="mt-3 w-full py-2.5 bg-primary text-base-bg font-bold rounded-xl text-sm transition-opacity cursor-pointer hover:opacity-90">在地图上寻路</button>
+                    ${selectedData.navigationUrl ? `<a href="${selectedData.navigationUrl}" target="_blank" class="mt-1 w-full py-2 text-center text-tertiary text-xs hover:text-primary transition-colors">打开第三方导航</a>` : ''}
+                 `;
+                 
+                 contentDiv.querySelector("#amap-route-btn")?.addEventListener("click", () => {
+                     drawRoute(location, candidate.coordinates);
+                 });
+
+                 if (!infoWindowRef.current) {
+                    infoWindowRef.current = new (window as any).AMap.InfoWindow({
+                       isCustom: true,
+                       autoMove: true,
+                       offset: new (window as any).AMap.Pixel(0, -10)
+                    });
+                 }
+                 infoWindowRef.current.setContent(contentDiv);
+                 infoWindowRef.current.open(mapRef.current, [candidate.coordinates.longitude, candidate.coordinates.latitude]);
+             }
+         });
+      }
+      newMarkersMap.set(candidate.name, marker);
+    });
+
+    poiMarkersRef.current = newMarkersMap;
+
+  }, [poiCandidates, isGenerating, result]);
+
   useEffect(() => {
     if (circleRef.current) {
       circleRef.current.setRadius(activeRadiusMeter);
@@ -382,12 +500,15 @@ export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunCh
       <div className="absolute inset-0 z-[1] pointer-events-none opacity-[0.08]" style={{ backgroundImage: "radial-gradient(currentColor 1px, transparent 1px)", backgroundSize: "16px 16px" }}></div>
 
       {/* UI Overlay Layer */}
-      <div className="relative z-10 flex flex-col h-full pointer-events-none">
+      <div className="relative z-10 flex flex-col h-full pointer-events-none p-4">
 
-        {/* UI Overlay Layer */}
-        <div className="relative z-10 flex flex-col h-full pointer-events-none p-4">
+        {currentWeather && (
+           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-auto bg-surface/60 backdrop-blur-xl px-4 py-2 rounded-full border border-white/10 shadow-lg text-primary text-xs font-medium animate-fade-in whitespace-nowrap">
+             {currentWeather}
+           </div>
+        )}
 
-          {/* Scenario-specific Floating MAP Tools */}
+        {/* Scenario-specific Floating MAP Tools */}
           {scenarioId === "run_tomorrow" ? (
             <>
               <RunDistanceControl
@@ -425,6 +546,5 @@ export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunCh
           </div>
         </div>
       </div>
-    </div>
   );
 }

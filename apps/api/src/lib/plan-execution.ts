@@ -129,3 +129,16 @@ export function logPlanExecution(
   });
 }
 
+export function emitPlanData(dataType: "weather" | "candidates", payload: unknown) {
+  const state = executionStorage.getStore();
+  if (!state) {
+    return;
+  }
+
+  state.emit({
+    type: "data",
+    dataType,
+    payload,
+    timestamp: now()
+  });
+}

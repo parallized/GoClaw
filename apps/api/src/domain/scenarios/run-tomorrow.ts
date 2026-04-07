@@ -12,7 +12,7 @@ import type { HourlyWeatherPoint, PointOfInterest } from "../service-types";
 import type { ScenarioDefinition, ScenarioPlannerContext } from "../scenario-definition";
 import { extractJsonBlock, safeJsonParse } from "../../lib/json-parser";
 import { AppError, toErrorMessage } from "../../lib/errors";
-import { logPlanExecution, markExecutionStage, withExecutionStage } from "../../lib/plan-execution";
+import { emitPlanData, logPlanExecution, markExecutionStage, withExecutionStage } from "../../lib/plan-execution";
 import { scoreRunHour, summarizeDailyWeather } from "../../lib/weather";
 
 const RUN_STAGE_IDS = {
@@ -45,6 +45,17 @@ type RoutedCandidate = {
   estTimeMin: number;
   navigationUrl: string;
   routeSource: string;
+};
+
+type RunAiRoute = {
+  name: string;
+  why?: string;
+};
+
+type RunAiAnalysis = {
+  reason?: string;
+  routes?: RunAiRoute[];
+  tips?: string[];
 };
 
 type RunDistanceProfile = {
@@ -138,7 +149,20 @@ function buildRouteSummary(poi: PointOfInterest): string {
 }
 
 function buildRouteWhy(poi: PointOfInterest, slot: ScheduledRouteSlot): string {
-  return `${buildRouteSummary(poi)}，建议 ${slot.recommendedTime} 出发，在 ${slot.timeWindow.from}-${slot.timeWindow.to} 完成；这个时段体感 ${slot.hour.apparentTemperatureC.toFixed(0)}℃、降水 ${slot.hour.precipitationProbability.toFixed(0)}%、UV ${slot.hour.uvIndex.toFixed(1)}。`;
+  return `${buildRouteSummary(poi)}，${buildRouteFactSuffix(slot)}`;
+}
+
+function buildRouteFactSuffix(slot: ScheduledRouteSlot): string {
+  return `建议 ${slot.recommendedTime} 出发，在 ${slot.timeWindow.from}-${slot.timeWindow.to} 完成；这个时段体感 ${slot.hour.apparentTemperatureC.toFixed(0)}℃、降水 ${slot.hour.precipitationProbability.toFixed(0)}%、UV ${slot.hour.uvIndex.toFixed(1)}。`;
+}
+
+function mergeAiRouteWhy(aiWhy: string | undefined, poi: PointOfInterest, slot: ScheduledRouteSlot): string {
+  const trimmed = aiWhy?.trim();
+  if (!trimmed) {
+    return buildRouteWhy(poi, slot);
+  }
+
+  return `${trimmed.replace(/[。；;，,\s]+$/u, "")}。${buildRouteFactSuffix(slot)}`;
 }
 
 function buildTips(bestTime: string, framedWindow: TimeWindow, temperatureMaxC: number, precipitationProbabilityMax: number, uvMax: number): string[] {
@@ -236,30 +260,15 @@ function buildPoiKey(poi: PointOfInterest): string {
   return `${poi.id}:${normalizeCopy(poi.name)}:${poi.coordinates.latitude.toFixed(5)}:${poi.coordinates.longitude.toFixed(5)}`;
 }
 
-function countTerrainMatches(poi: PointOfInterest, preferredTerrains: ReadonlySet<string>): number {
-  if (preferredTerrains.size === 0) {
-    return 0;
-  }
-
-  return poi.terrains.filter((terrain) => preferredTerrains.has(terrain)).length;
-}
-
 function comparePoisByPreference(
   left: PointOfInterest,
   right: PointOfInterest,
-  profile: RunDistanceProfile,
-  preferredTerrains: ReadonlySet<string>
+  profile: RunDistanceProfile
 ): number {
   const leftBandGap = distanceToRange(left.distanceMeters, profile.poiMinMeters, profile.poiMaxMeters);
   const rightBandGap = distanceToRange(right.distanceMeters, profile.poiMinMeters, profile.poiMaxMeters);
   if (leftBandGap !== rightBandGap) {
     return leftBandGap - rightBandGap;
-  }
-
-  const leftTerrainMatches = countTerrainMatches(left, preferredTerrains);
-  const rightTerrainMatches = countTerrainMatches(right, preferredTerrains);
-  if (leftTerrainMatches !== rightTerrainMatches) {
-    return rightTerrainMatches - leftTerrainMatches;
   }
 
   const leftTargetGap = Math.abs(left.distanceMeters - profile.poiTargetMeters);
@@ -273,8 +282,7 @@ function comparePoisByPreference(
 
 function prioritizeRunPoisByPreference(
   pois: readonly PointOfInterest[],
-  profile: RunDistanceProfile,
-  preferredTerrains: ReadonlySet<string>
+  profile: RunDistanceProfile
 ): PointOfInterest[] {
   const deduped: PointOfInterest[] = [];
   const seen = new Set<string>();
@@ -289,7 +297,7 @@ function prioritizeRunPoisByPreference(
     deduped.push(poi);
   }
 
-  return deduped.sort((left, right) => comparePoisByPreference(left, right, profile, preferredTerrains));
+  return deduped.sort((left, right) => comparePoisByPreference(left, right, profile));
 }
 
 function countMileageMatchedPois(pois: readonly PointOfInterest[], profile: RunDistanceProfile): number {
@@ -372,8 +380,7 @@ function pickRouteSlot(route: RoutedCandidate, scoredHours: ScoredHour[], framed
 async function loadRunPois(
   context: ScenarioPlannerContext,
   input: RunPlanRequest,
-  profile: RunDistanceProfile,
-  preferredTerrains: ReadonlySet<string>
+  profile: RunDistanceProfile
 ): Promise<PointOfInterest[]> {
   let ranked: PointOfInterest[] = [];
 
@@ -392,7 +399,7 @@ async function loadRunPois(
       }
 
       const resolved = await context.poiProvider.searchRunPois(input.location, radius);
-      ranked = prioritizeRunPoisByPreference([...ranked, ...resolved], profile, preferredTerrains);
+      ranked = prioritizeRunPoisByPreference([...ranked, ...resolved], profile);
 
       const matchedCount = countMileageMatchedPois(ranked, profile);
       logPlanExecution("info", `累计获得 ${ranked.length} 个候选地点，其中 ${matchedCount} 个更贴近当前里程偏好`);
@@ -449,7 +456,7 @@ function buildRunProcessSteps(context: ScenarioPlannerContext, routeCount?: numb
       id: RUN_STAGE_IDS.ai,
       title: "综合推荐",
       detail: context.aiProvider
-        ? "正在根据已确定的时间窗口和路线事实做轻量文案优化"
+        ? "正在结合用户标签偏好分析真实候选路线，并生成最终推荐说明。"
         : "当前未启用 AI 润色，直接返回基于真实数据生成的确定性结果。",
       provider: context.aiProvider?.name,
       outcome: context.aiProvider ? "success" : "skipped"
@@ -457,77 +464,124 @@ function buildRunProcessSteps(context: ScenarioPlannerContext, routeCount?: numb
   ];
 }
 
-async function enhancePlan(context: ScenarioPlannerContext, plan: RunPlan): Promise<RunPlan> {
-  if (!context.aiProvider) {
-    return plan;
-  }
-
+async function analyzeRunCandidates(
+  context: ScenarioPlannerContext,
+  input: RunPlanRequest,
+  weatherData: {
+    bestHour: HourlyWeatherPoint;
+    framedWindow: TimeWindow;
+    weatherLabel: string;
+  },
+  candidates: RoutedCandidate[]
+): Promise<RunAiAnalysis | null> {
   try {
     const response = await context.aiProvider.generateText({
       system: [
-        "你是跑步规划编辑，只负责轻量润色已有事实。",
-        "不得新增、删除或改写地点、推荐时间、时间段、天气数值、路线距离、路线来源或标签。",
-        "总理由需要说明为何在给定时间框内选择这个出发点。",
-        "每条路线 why 必须保留自身角度，结合该路线的推荐时间与时间段，不能复述总理由，也不要让不同路线句式雷同。",
+        "你是跑步路线分析师，需要根据用户偏好标签，从已经测距成功的真实候选路线中挑选并排序最多 3 条推荐路线。",
+        "用户选择的 terrain 标签只用于分析与排序，不是 POI 获取约束。",
+        "不得新增、删除或改写候选路线的名称、距离、预计时长、路线来源或标签。",
+        "只能从给定候选 routes 中选择 name；如果偏好标签为空，就优先考虑完成度、路线多样性和稳妥性。",
+        "总理由需要说明为何在给定天气窗口下，这组路线更贴近用户偏好。",
+        "每条路线 why 只描述体验角度与偏好匹配，不要写具体时间、温度、降水、UV 数值，也不要和总理由重复。",
         "输出 JSON，字段仅包含 reason、routes、tips；routes 内仅包含 name 和 why。"
       ].join(""),
       user: JSON.stringify({
-        framedWindow: plan.framedWindow,
-        bestTime: plan.bestTime,
-        weatherSummary: plan.weatherSummary,
-        reason: plan.reason,
-        routes: plan.routes.map((route) => ({
-          name: route.name,
-          recommendedTime: route.recommendedTime,
-          timeWindow: route.timeWindow,
-          why: route.why,
-          tags: route.tags
+        preferences: {
+          terrain: input.preferences?.terrain ?? [],
+          preferredDistanceKm: input.preferences?.preferredDistanceKm,
+          paceMinPerKm: input.preferences?.paceMinPerKm,
+          avoidHighUv: input.preferences?.avoidHighUv ?? true
+        },
+        framedWindow: weatherData.framedWindow,
+        bestTime: isoToTime(weatherData.bestHour.time),
+        weatherSummary: weatherData.weatherLabel,
+        routes: candidates.map((route) => ({
+          name: route.poi.name,
+          distanceKm: route.distanceKm,
+          estTimeMin: route.estTimeMin,
+          tags: route.poi.terrains,
+          routeSource: route.routeSource
         })),
-        tips: plan.tips
       }),
-      temperature: 0.35
+      temperature: 0.45
     });
 
-    const parsed = safeJsonParse<{ reason?: string; routes?: Array<{ name: string; why?: string }>; tips?: string[] }>(extractJsonBlock(response));
+    const parsed = safeJsonParse<RunAiAnalysis>(extractJsonBlock(response));
     if (!parsed) {
-      logPlanExecution("warn", "AI 返回内容无法解析，保留原始跑步文案");
-      return plan;
+      logPlanExecution("warn", "AI 返回内容无法解析，保留原始跑步结果");
+      return null;
     }
 
-    const usedCopies = new Set<string>();
-    const reason = chooseDistinctCopy(parsed.reason, plan.reason, usedCopies);
-    const routes = plan.routes.map((route) => {
-      const aiWhy = parsed.routes?.find((item) => item.name === route.name)?.why;
-      return {
-        ...route,
-        why: chooseDistinctCopy(aiWhy, route.why, usedCopies)
-      };
-    });
-    const tips = dedupeTextList(parsed.tips?.filter(Boolean) ?? plan.tips).slice(0, 4);
+    return parsed;
+  } catch (error) {
+    logPlanExecution("warn", "AI 路线分析失败，保留原始跑步结果", toErrorMessage(error));
+    return null;
+  }
+}
 
-    const changed = reason !== plan.reason
-      || routes.some((route, index) => route.why !== plan.routes[index]?.why)
-      || tips.length !== plan.tips.length
-      || tips.some((tip, index) => tip !== plan.tips[index]);
+function orderRunCandidates(candidates: RoutedCandidate[], aiRoutes?: RunAiRoute[], limit = 3): RoutedCandidate[] {
+  const byName = new Map(candidates.map((candidate) => [candidate.poi.name, candidate]));
+  const ordered: RoutedCandidate[] = [];
+  const seen = new Set<string>();
 
-    if (!changed) {
-      return plan;
+  for (const route of aiRoutes ?? []) {
+    const matched = byName.get(route.name);
+    if (!matched || seen.has(matched.poi.name)) {
+      continue;
     }
+
+    seen.add(matched.poi.name);
+    ordered.push(matched);
+    if (ordered.length >= limit) {
+      return ordered;
+    }
+  }
+
+  for (const candidate of candidates) {
+    if (seen.has(candidate.poi.name)) {
+      continue;
+    }
+
+    seen.add(candidate.poi.name);
+    ordered.push(candidate);
+    if (ordered.length >= limit) {
+      break;
+    }
+  }
+
+  return ordered;
+}
+
+function buildRunRoutes(
+  candidates: RoutedCandidate[],
+  weatherData: {
+    scoredHours: ScoredHour[];
+    framedWindow: TimeWindow;
+  },
+  usedCopies?: Set<string>,
+  aiRoutes?: RunAiRoute[]
+): RunRoute[] {
+  const usedTimes = new Set<string>();
+  const aiWhyByName = new Map((aiRoutes ?? []).map((route) => [route.name, route.why]));
+
+  return candidates.map((route) => {
+    const slot = pickRouteSlot(route, weatherData.scoredHours, weatherData.framedWindow, usedTimes);
+    const baseWhy = buildRouteWhy(route.poi, slot);
+    const mergedWhy = mergeAiRouteWhy(aiWhyByName.get(route.poi.name), route.poi, slot);
 
     return {
-      ...plan,
-      reason,
-      routes,
-      tips: tips.length > 0 ? tips : plan.tips,
-      meta: {
-        ...plan.meta,
-        aiEnhanced: true
-      }
+      name: route.poi.name,
+      distanceKm: route.distanceKm,
+      estTimeMin: route.estTimeMin,
+      recommendedTime: slot.recommendedTime,
+      timeWindow: slot.timeWindow,
+      why: usedCopies ? chooseDistinctCopy(mergedWhy, baseWhy, usedCopies) : baseWhy,
+      tags: route.poi.terrains,
+      navigationUrl: route.navigationUrl,
+      routeSource: route.routeSource,
+      poiCoordinates: route.poi.coordinates
     };
-  } catch (error) {
-    logPlanExecution("warn", "AI 润色失败，保留原始跑步文案", toErrorMessage(error));
-    return plan;
-  }
+  });
 }
 
 export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema, typeof runPlanSchema> = {
@@ -540,7 +594,6 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
   },
   async plan(context, input) {
     const distanceProfile = buildRunDistanceProfile(input);
-    const preferredTerrains = new Set(input.preferences?.terrain ?? []);
     const [weatherData, place, pois] = await Promise.all([
       withExecutionStage(RUN_STAGE_IDS.weather, async () => {
         logPlanExecution("info", "开始拉取未来 7 天的逐小时天气数据");
@@ -577,6 +630,8 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
 
         const weatherLabel = summarizeDailyWeather(targetDay);
         logPlanExecution("info", `最佳时段评估完成：${isoToTime(bestHour.time)}，天气 ${weatherLabel}`);
+        
+        emitPlanData("weather", { label: weatherLabel });
 
         return {
           forecast,
@@ -595,8 +650,11 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
       }),
       withExecutionStage(RUN_STAGE_IDS.poi, async () => {
         logPlanExecution("info", "开始搜索周边真实跑步地点");
-        const resolvedPois = await loadRunPois(context, input, distanceProfile, preferredTerrains);
+        const resolvedPois = await loadRunPois(context, input, distanceProfile);
         logPlanExecution("info", `地点筛选完成：共获得 ${resolvedPois.length} 个候选 POI`);
+        
+        emitPlanData("candidates", resolvedPois);
+
         return resolvedPois;
       })
     ]);
@@ -608,7 +666,7 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
 
     const paceMinPerKm = input.preferences?.paceMinPerKm ?? 6.5;
     const routedCandidates = await withExecutionStage(RUN_STAGE_IDS.routing, async () => {
-      const candidatePois = prioritizeRunPoisByPreference(pois, distanceProfile, preferredTerrains).slice(0, 10);
+      const candidatePois = prioritizeRunPoisByPreference(pois, distanceProfile).slice(0, 10);
       logPlanExecution("info", `开始为 ${candidatePois.length} 个更贴近里程偏好的候选地点计算步行往返路线`);
 
       const routeCandidates = await Promise.all(
@@ -618,9 +676,6 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
             const distanceKm = Number(((route.distanceMeters * 2) / 1000).toFixed(1));
             const estTimeMin = Math.max(15, Math.round(distanceKm * paceMinPerKm));
             const distanceScore = 100 - Math.abs(distanceKm - distanceProfile.preferredCenterKm) * 16;
-            const terrainScore = preferredTerrains.size === 0
-              ? 0
-              : poi.terrains.filter((terrain) => preferredTerrains.has(terrain)).length * 12;
 
             logPlanExecution("info", `路线测距成功：${poi.name}，往返约 ${distanceKm} km，预计 ${estTimeMin} 分钟`);
 
@@ -630,7 +685,7 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
               estTimeMin,
               navigationUrl: context.navigationProvider.buildNavigationUrl(poi.coordinates, poi.name),
               routeSource: route.source,
-              score: distanceScore + terrainScore - poi.distanceMeters / 700
+              score: distanceScore - poi.distanceMeters / 700
             };
           } catch (error) {
             logPlanExecution("warn", `路线测距失败：${poi.name}`, toErrorMessage(error));
@@ -645,7 +700,7 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
       const routes = successfulRoutes
         .filter((item) => item.distanceKm >= distanceProfile.routeFilterMinKm && item.distanceKm <= distanceProfile.routeFilterMaxKm)
         .sort((left, right) => right.score - left.score)
-        .slice(0, 3)
+        .slice(0, 6)
         .map<RoutedCandidate>((item) => ({
           poi: item.poi,
           distanceKm: item.distanceKm,
@@ -664,26 +719,11 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
         throw new AppError("附近真实路线与当前里程偏好不匹配，请放宽距离后重试。", 404);
       }
 
-      logPlanExecution("info", `路线筛选完成：最终保留 ${routes.length} 条建议`);
+      logPlanExecution("info", `路线筛选完成：保留 ${routes.length} 条真实候选路线供最终推荐`);
       return routes;
     });
 
-    const usedTimes = new Set<string>();
-    const selectedRoutes: RunRoute[] = routedCandidates.map((route) => {
-      const slot = pickRouteSlot(route, weatherData.scoredHours, weatherData.framedWindow, usedTimes);
-      return {
-        name: route.poi.name,
-        distanceKm: route.distanceKm,
-        estTimeMin: route.estTimeMin,
-        recommendedTime: slot.recommendedTime,
-        timeWindow: slot.timeWindow,
-        why: buildRouteWhy(route.poi, slot),
-        tags: route.poi.terrains,
-        navigationUrl: route.navigationUrl,
-        routeSource: route.routeSource,
-        poiCoordinates: route.poi.coordinates
-      };
-    });
+    const selectedRoutes = buildRunRoutes(routedCandidates.slice(0, 3), weatherData);
 
     const bestTime = isoToTime(weatherData.bestHour.time);
     const basePlan: RunPlan = {
@@ -713,16 +753,38 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
 
     if (!context.aiProvider) {
       markExecutionStage(RUN_STAGE_IDS.ai, "skipped");
-      logPlanExecution("info", "未启用 AI 润色，直接返回基于真实数据的结果", undefined, RUN_STAGE_IDS.ai);
+      logPlanExecution("info", "未启用 AI 综合分析，直接返回基于真实数据的结果", undefined, RUN_STAGE_IDS.ai);
       return basePlan;
     }
 
     return await withExecutionStage(RUN_STAGE_IDS.ai, async () => {
-      logPlanExecution("info", "开始执行 AI 文案润色");
-      const enhanced = await enhancePlan(context, basePlan);
+      logPlanExecution("info", "开始执行 AI 路线分析与偏好对齐");
+      const aiAnalysis = await analyzeRunCandidates(context, input, weatherData, routedCandidates);
+      if (!aiAnalysis) {
+        logPlanExecution("info", "AI 未产出可用分析结果，已保留原始跑步结果");
+        return basePlan;
+      }
+
+      const usedCopies = new Set<string>();
+      const reason = chooseDistinctCopy(aiAnalysis.reason, basePlan.reason, usedCopies);
+      const aiOrderedCandidates = orderRunCandidates(routedCandidates, aiAnalysis.routes);
+      const aiRoutes = buildRunRoutes(aiOrderedCandidates, weatherData, usedCopies, aiAnalysis.routes);
+      const aiTips = dedupeTextList(aiAnalysis.tips?.filter(Boolean) ?? []).slice(0, 4);
+      const enhanced: RunPlan = {
+        ...basePlan,
+        reason,
+        routes: aiRoutes,
+        tips: aiTips.length > 0 ? aiTips : basePlan.tips,
+        meta: {
+          ...basePlan.meta,
+          aiEnhanced: true,
+          process: buildRunProcessSteps(context, aiRoutes.length)
+        }
+      };
+
       logPlanExecution(
         "info",
-        enhanced.meta.aiEnhanced ? "AI 文案润色完成" : "AI 未产出可用结果，已保留原始文案"
+        enhanced.meta.aiEnhanced ? "AI 路线分析完成" : "AI 未产出可用结果，已保留原始文案"
       );
       return enhanced;
     });

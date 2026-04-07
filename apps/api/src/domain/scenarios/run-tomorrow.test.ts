@@ -129,18 +129,18 @@ describe("runTomorrowScenario - AI enhancement", () => {
 
   it("enhances plan with AI provider", async () => {
     const aiResponse = JSON.stringify({
-      reason: "AI润色的推荐理由",
-      routes: [{ name: "世纪公园跑道", why: "AI润色的路线原因" }],
+      reason: "AI按偏好整理后的推荐理由",
+      routes: [{ name: "滨江步道", why: "更贴近你想要的临水放松感" }],
       tips: ["AI增强跑步提示1", "AI增强跑步提示2"]
     });
 
     const aiProvider: AiProvider = {
       name: "mock-ai",
       generateText: async (input) => {
-        expect(input.temperature).toBe(0.35);
-        expect(input.system).toContain("跑步规划编辑");
-        expect(input.user).toContain("recommendedTime");
-        expect(input.user).toContain("timeWindow");
+        expect(input.temperature).toBe(0.45);
+        expect(input.system).toContain("跑步路线分析师");
+        expect(input.user).toContain('"terrain":["waterfront"]');
+        expect(input.user).toContain('"routes"');
         return aiResponse;
       }
     };
@@ -148,17 +148,17 @@ describe("runTomorrowScenario - AI enhancement", () => {
     const context = makeContext(aiProvider);
     const result = await runTomorrowScenario.plan(context, {
       location: { latitude: 31.23, longitude: 121.47 },
-      timezone: "Asia/Shanghai"
+      timezone: "Asia/Shanghai",
+      preferences: {
+        terrain: ["waterfront"]
+      }
     });
 
     expect(result.meta.aiEnhanced).toBe(true);
-    expect(result.reason).toBe("AI润色的推荐理由");
+    expect(result.reason).toBe("AI按偏好整理后的推荐理由");
     expect(result.tips).toEqual(["AI增强跑步提示1", "AI增强跑步提示2"]);
-
-    const route = result.routes.find((r) => r.name === "世纪公园跑道");
-    if (route) {
-      expect(route.why).toBe("AI润色的路线原因");
-    }
+    expect(result.routes[0]?.name).toBe("滨江步道");
+    expect(result.routes[0]?.why).toContain("更贴近你想要的临水放松感");
   });
 
   it("uses framed start window to constrain best time and route windows", async () => {
@@ -329,6 +329,24 @@ describe("runTomorrowScenario - AI enhancement", () => {
     expect(routeNames).toContain("江边长线绿道");
     expect(routeNames).toContain("城市环形跑道");
     expect(result.routes.every((route) => route.distanceKm >= 8)).toBe(true);
+  });
+
+  it("does not let terrain tags alter deterministic route selection when AI is disabled", async () => {
+    const context = makeContext(null);
+    const base = await runTomorrowScenario.plan(context, {
+      location: { latitude: 31.23, longitude: 121.47 },
+      timezone: "Asia/Shanghai"
+    });
+
+    const themed = await runTomorrowScenario.plan(context, {
+      location: { latitude: 31.23, longitude: 121.47 },
+      timezone: "Asia/Shanghai",
+      preferences: {
+        terrain: ["waterfront"]
+      }
+    });
+
+    expect(themed.routes.map((route) => route.name)).toEqual(base.routes.map((route) => route.name));
   });
 
   it("falls back to primary POIs when expanded POI lookup fails", async () => {

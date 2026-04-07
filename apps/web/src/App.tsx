@@ -11,7 +11,6 @@ import type {
   ScenarioId,
   ScenarioManifest
 } from "@goclaw/contracts";
-import { PlanResultView, ExecutionPanel } from "./components/PlanResult";
 import { FormSection, TimeWindowControl, TerrainControl, PhotoThemesControl, PhotoSkillControl, getTagColorHex } from "./components/FormSection";
 import { NavigationStack, type CollectionState, type ReservationTarget } from "./components/NavigationStack";
 import { ScenarioStep } from "./components/ScenarioStep";
@@ -37,8 +36,7 @@ function writeExecutionLogToConsole(entry: PlanExecutionLogEntry, stageTitle?: s
       break;
   }
 }
-
-type AppStep = "scenario" | "form" | "execution" | "result";
+type AppStep = "scenario" | "form";
 type OverlayPanelState = {
   mode: "navigation" | "collection";
   target: ReservationTarget | null;
@@ -59,6 +57,9 @@ export function App() {
   const [executionStages, setExecutionStages] = useState<PlanExecutionStage[]>([]);
   const [executionStageStatuses, setExecutionStageStatuses] = useState<Record<string, PlanExecutionStageStatus>>({});
   const [appStep, setAppStep] = useState<AppStep>("scenario");
+  const [isGenerating, setIsGenerating] = useState<boolean>(false);
+  const [currentWeather, setCurrentWeather] = useState<string>("");
+  const [poiCandidates, setPoiCandidates] = useState<any[]>([]);
   const [theme, setTheme] = useState<"light" | "dark" | "auto">("auto");
   const [overlayPanel, setOverlayPanel] = useState<OverlayPanelState>(null);
   const [collection, setCollection] = useState<CollectionState>(defaultCollectionState);
@@ -162,9 +163,11 @@ export function App() {
     setLoading(true);
     setError(null);
     setResult(null);
+    setIsGenerating(true);
+    setCurrentWeather("");
+    setPoiCandidates([]);
     setExecutionStages([]);
     setExecutionStageStatuses({});
-    setAppStep("execution");
     closeOverlayPanel();
     executionStageTitleRef.current = {};
 
@@ -193,12 +196,19 @@ export function App() {
             }
             case "result":
               setResult(event.data);
-              setAppStep("result");
+              setIsGenerating(false);
               break;
             case "error":
               setResult(null);
+              setIsGenerating(false);
               setError(event.message);
-              setAppStep("form");
+              break;
+            case "data":
+              if (event.dataType === "weather") {
+                setCurrentWeather((event.payload as { label: string }).label);
+              } else if (event.dataType === "candidates") {
+                setPoiCandidates(event.payload as any[]);
+              }
               break;
           }
         }
@@ -214,13 +224,14 @@ export function App() {
       setAppStep("form");
     } finally {
       setLoading(false);
+      setIsGenerating(false);
       if (abortControllerRef.current === controller) {
         abortControllerRef.current = null;
       }
     }
   }
 
-  const steps: AppStep[] = ["scenario", "form", "execution", "result"];
+  const steps: AppStep[] = ["scenario", "form"];
   const currentStepIndex = steps.indexOf(appStep);
 
   return (
@@ -286,7 +297,7 @@ export function App() {
                         )}
                       </button>
 
-                      {step === "result" && result ? (
+                      {step === "form" && result ? (
                         <>
                           <button
                             type="button"
@@ -383,16 +394,21 @@ export function App() {
 
                             {/* Map Container Area */}
                             <div className="flex-1 w-full min-h-[500px] h-full relative z-0 mb-6 sm:mb-8">
-                              <FormSection
-                                scenarioId={scenarioId}
-                                themeMode={isDark ? "dark" : "light"}
-                                runForm={runForm}
-                                photoForm={photoForm}
-                                onRunChange={setRunForm}
-                                onPhotoChange={setPhotoForm}
-                                geoStatus={geoStatus}
-                                onRelocate={handleDetectLocation}
-                              />
+                                <FormSection
+                                  scenarioId={scenarioId}
+                                  themeMode={isDark ? "dark" : "light"}
+                                  runForm={runForm}
+                                  photoForm={photoForm}
+                                  onRunChange={setRunForm}
+                                  onPhotoChange={setPhotoForm}
+                                  geoStatus={geoStatus}
+                                  onRelocate={handleDetectLocation}
+                                  isGenerating={isGenerating}
+                                  currentWeather={currentWeather}
+                                  poiCandidates={poiCandidates}
+                                  result={result}
+                                  onNavigate={(target) => openOverlayPanel("navigation", target)}
+                                />
                             </div>
 
                           </div>
@@ -400,85 +416,6 @@ export function App() {
                       </motion.div>
                     )}
 
-                    {step === "execution" && (
-                      <motion.div
-                        className="flex-1 flex flex-col h-full"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ duration: 0.3 }}
-                      >
-                        <ExecutionPanel stages={executionStages} stageStatuses={executionStageStatuses} loading={loading} />
-                      </motion.div>
-                    )}
-
-                    {step === "result" && (
-                      <motion.div
-                        className="relative flex-1 min-h-0"
-                        initial={{ opacity: 0, y: 12 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.4, ease: [0.19, 1, 0.22, 1] }}
-                      >
-                        <motion.div
-                          className="flex h-full min-h-0 flex-col"
-                          animate={{
-                            scale: overlayPanel ? 0.982 : 1,
-                            y: overlayPanel ? -18 : 0,
-                            opacity: overlayPanel ? 0.72 : 1
-                          }}
-                          transition={{ type: "spring", stiffness: 320, damping: 32 }}
-                          style={{ pointerEvents: overlayPanel ? "none" : "auto" }}
-                        >
-                          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pr-1">
-                            {result ? (
-                              <PlanResultView
-                                plan={result}
-                                onReserve={handleReserve}
-                                onOpenNavigation={handleOpenNavigation}
-                              />
-                            ) : (
-                              <div className="text-center text-secondary py-20">无结果数据</div>
-                            )}
-                          </div>
-
-                          <div className="mt-auto pt-16 text-center shrink-0">
-                            <button
-                              onClick={() => {
-                                closeOverlayPanel();
-                                setAppStep("scenario");
-                                setResult(null);
-                              }}
-                              className="bg-surface/50 hover:bg-surface border border-white/10 px-8 py-3 text-sm font-bold text-primary transition-all uppercase tracking-[0.2em] shadow-sm hover:shadow-md cursor-pointer rounded-lg"
-                            >
-                              ↺ 重新规划
-                            </button>
-                          </div>
-                        </motion.div>
-
-                        <AnimatePresence>
-                          {overlayPanel ? (
-                            <motion.div
-                              key={`${overlayPanel.mode}:${overlayPanel.target?.name ?? "default"}`}
-                              initial={{ opacity: 0, y: 40, scale: 0.985 }}
-                              animate={{ opacity: 1, y: 0, scale: 1 }}
-                              exit={{ opacity: 0, y: 28, scale: 0.99 }}
-                              transition={{ duration: 0.28, ease: [0.19, 1, 0.22, 1] }}
-                              className="absolute inset-0 z-20"
-                            >
-                              <NavigationStack
-                                open={true}
-                                mode={overlayPanel.mode}
-                                target={overlayPanel.target}
-                                onClose={closeOverlayPanel}
-                                location={scenarioId === "run_tomorrow" ? runForm.location : photoForm.location}
-                                result={result}
-                                collection={collection}
-                                onCollectionChange={setCollection}
-                              />
-                            </motion.div>
-                          ) : null}
-                        </AnimatePresence>
-                      </motion.div>
-                    )}
                   </div>
                 </div>
               </motion.div>

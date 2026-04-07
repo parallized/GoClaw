@@ -4,14 +4,16 @@ import {
   scenarioCatalog,
   type CameraSkill,
   type PlanProcessStep,
+  type PhotoSpot,
   type PhotoTheme,
+  type PhotoWeekRequest,
   type PhotoWeekPlan
 } from "@goclaw/contracts";
 import type { DailyWeatherPoint, PointOfInterest } from "../service-types";
 import type { ScenarioDefinition, ScenarioPlannerContext } from "../scenario-definition";
 import { extractJsonBlock, safeJsonParse } from "../../lib/json-parser";
 import { AppError, toErrorMessage } from "../../lib/errors";
-import { logPlanExecution, markExecutionStage, withExecutionStage } from "../../lib/plan-execution";
+import { emitPlanData, logPlanExecution, markExecutionStage, withExecutionStage } from "../../lib/plan-execution";
 import { classifyLight, getWeatherLabel, summarizeDailyWeather } from "../../lib/weather";
 
 const PHOTO_STAGE_IDS = {
@@ -21,6 +23,36 @@ const PHOTO_STAGE_IDS = {
   navigation: "photo.navigation",
   ai: "photo.ai"
 } as const;
+
+type PreparedPhotoSpot = {
+  poi: PointOfInterest;
+  spot: PhotoSpot;
+};
+
+type CandidatePhotoDay = {
+  date: string;
+  weather: string;
+  day: DailyWeatherPoint;
+  candidates: PreparedPhotoSpot[];
+};
+
+type PhotoAiSpot = {
+  name: string;
+  reason?: string;
+  way?: string;
+  cameraSummary?: string;
+  tip?: string;
+};
+
+type PhotoAiDay = {
+  date: string;
+  spots?: PhotoAiSpot[];
+};
+
+type PhotoAiAnalysis = {
+  tips?: string[];
+  days?: PhotoAiDay[];
+};
 
 function manifest() {
   const found = scenarioCatalog.find((item) => item.id === "photo_week");
@@ -177,9 +209,9 @@ function buildPhotoProcessSteps(context: ScenarioPlannerContext, dayCount?: numb
     },
     {
       id: PHOTO_STAGE_IDS.ai,
-      title: "文案润色",
+      title: "AI 综合分析",
       detail: context.aiProvider
-        ? "在不新增虚构地点、天气或参数的前提下，轻量润色拍摄理由和提示。"
+        ? "结合用户主题偏好分析真实候选点位，挑选每日更合适的拍摄组合并生成说明。"
         : "当前未启用 AI 润色，直接返回基于真实数据生成的确定性结果。",
       provider: context.aiProvider?.name,
       outcome: context.aiProvider ? "success" : "skipped"
@@ -187,9 +219,8 @@ function buildPhotoProcessSteps(context: ScenarioPlannerContext, dayCount?: numb
   ];
 }
 
-function scorePoi(day: DailyWeatherPoint, poi: PointOfInterest, preferredThemes: Set<PhotoTheme>, usedTimes: number): number {
+function scorePoi(day: DailyWeatherPoint, poi: PointOfInterest, usedTimes: number): number {
   let score = 100 - poi.distanceMeters / 1500 - usedTimes * 12;
-  score += poi.themes.filter((theme) => preferredThemes.has(theme)).length * 18;
 
   if (poi.themes.includes("nature") && day.precipitationProbabilityMax <= 30) {
     score += 12;
@@ -207,20 +238,122 @@ function scorePoi(day: DailyWeatherPoint, poi: PointOfInterest, preferredThemes:
   return score;
 }
 
-async function enhancePlan(context: ScenarioPlannerContext, plan: PhotoWeekPlan): Promise<PhotoWeekPlan> {
-  if (!context.aiProvider) {
-    return plan;
+function buildPreparedPhotoSpot(
+  day: DailyWeatherPoint,
+  poi: PointOfInterest,
+  light: ReturnType<typeof classifyLight>,
+  cameraSkill: CameraSkill | undefined,
+  navigationProvider: ScenarioPlannerContext["navigationProvider"]
+): PreparedPhotoSpot {
+  const bestTime = bestTimeForDay(day, poi.themes);
+  const camera = cameraPreset(light, cameraSkill, poi.themes);
+
+  return {
+    poi,
+    spot: {
+      name: poi.name,
+      reason: buildPhotoReason(day, poi),
+      bestTime,
+      way: buildPhotoWay(light, poi),
+      camera,
+      cameraSummary: `建议 ${camera.iso}、${camera.aperture}、${camera.shutter}、${camera.whiteBalance}，优先确保主体清晰和高光不过曝。`,
+      tip: buildPhotoTip(day, poi.themes),
+      categories: poi.themes,
+      navigationUrl: navigationProvider.buildNavigationUrl(poi.coordinates, poi.name),
+      poiCoordinates: poi.coordinates
+    }
+  };
+}
+
+function orderPreparedPhotoSpots(
+  candidates: PreparedPhotoSpot[],
+  aiSpots?: PhotoAiSpot[],
+  limit = 2
+): PreparedPhotoSpot[] {
+  const byName = new Map(candidates.map((candidate) => [candidate.spot.name, candidate]));
+  const ordered: PreparedPhotoSpot[] = [];
+  const seen = new Set<string>();
+
+  for (const spot of aiSpots ?? []) {
+    const matched = byName.get(spot.name);
+    if (!matched || seen.has(matched.spot.name)) {
+      continue;
+    }
+
+    seen.add(matched.spot.name);
+    ordered.push(matched);
+    if (ordered.length >= limit) {
+      return ordered;
+    }
   }
 
+  for (const candidate of candidates) {
+    if (seen.has(candidate.spot.name)) {
+      continue;
+    }
+
+    seen.add(candidate.spot.name);
+    ordered.push(candidate);
+    if (ordered.length >= limit) {
+      break;
+    }
+  }
+
+  return ordered;
+}
+
+function buildPhotoDay(
+  candidateDay: CandidatePhotoDay,
+  selectedCandidates: PreparedPhotoSpot[],
+  aiSpots?: PhotoAiSpot[]
+) {
+  const aiByName = new Map((aiSpots ?? []).map((spot) => [spot.name, spot]));
+  const spots = selectedCandidates.map(({ spot }) => {
+    const aiSpot = aiByName.get(spot.name);
+    return {
+      ...spot,
+      reason: aiSpot?.reason?.trim() || spot.reason,
+      way: aiSpot?.way?.trim() || spot.way,
+      cameraSummary: aiSpot?.cameraSummary?.trim() || spot.cameraSummary,
+      tip: aiSpot?.tip?.trim() || spot.tip
+    };
+  });
+
+  return {
+    date: candidateDay.date,
+    weather: candidateDay.weather,
+    spots,
+    tips: [buildPhotoTip(candidateDay.day, spots.flatMap((spot) => spot.categories))]
+  };
+}
+
+async function analyzePhotoCandidates(
+  context: ScenarioPlannerContext,
+  input: PhotoWeekRequest,
+  candidateDays: CandidatePhotoDay[]
+): Promise<PhotoAiAnalysis | null> {
   try {
     const response = await context.aiProvider.generateText({
-      system: "你是摄影规划编辑。你只能润色已有事实，不得新增日期、地点、天气或参数。输出 JSON，字段仅包含 tips 和 days。",
+      system: [
+        "你是摄影规划分析师，需要结合用户主题偏好，从每天已经准备好的真实候选点位中挑选并排序最多 2 个拍摄点。",
+        "用户选择的 themes 标签只用于分析与排序，不是 POI 获取约束。",
+        "不得新增日期、地点、天气、参数或题材标签，也不得改写候选点名称。",
+        "每一天只能从对应 candidates 里选择 spot.name；如果用户未给 themes，就优先考虑天气契合度、拍摄效率和一周内的整体多样性。",
+        "reason、way、cameraSummary、tip 只能围绕已给事实做更贴合用户偏好的表达，不要虚构新的相机数值。",
+        "输出 JSON，字段仅包含 tips 和 days；days 内仅包含 date 和 spots，spots 内仅包含 name、reason、way、cameraSummary、tip。"
+      ].join(""),
       user: JSON.stringify({
-        tips: plan.tips,
-        days: plan.days.map((day) => ({
+        preferences: {
+          themes: input.preferences?.themes ?? [],
+          cameraSkill: input.preferences?.cameraSkill
+        },
+        days: candidateDays.map((day) => ({
           date: day.date,
-          spots: day.spots.map((spot) => ({
+          weather: day.weather,
+          candidates: day.candidates.map(({ spot }) => ({
             name: spot.name,
+            bestTime: spot.bestTime,
+            categories: spot.categories,
             reason: spot.reason,
             way: spot.way,
             cameraSummary: spot.cameraSummary,
@@ -228,42 +361,19 @@ async function enhancePlan(context: ScenarioPlannerContext, plan: PhotoWeekPlan)
           }))
         }))
       }),
-      temperature: 0.4
+      temperature: 0.45
     });
 
-    const parsed = safeJsonParse<{ tips?: string[]; days?: Array<{ date: string; spots?: Array<{ name: string; reason?: string; way?: string; cameraSummary?: string; tip?: string }> }> }>(extractJsonBlock(response));
+    const parsed = safeJsonParse<PhotoAiAnalysis>(extractJsonBlock(response));
     if (!parsed) {
-      logPlanExecution("warn", "AI 返回内容无法解析，保留原始摄影文案");
-      return plan;
+      logPlanExecution("warn", "AI 返回内容无法解析，保留原始摄影结果");
+      return null;
     }
 
-    return {
-      ...plan,
-      tips: parsed.tips?.filter(Boolean).slice(0, 4) ?? plan.tips,
-      days: plan.days.map((day) => {
-        const aiDay = parsed.days?.find((item) => item.date === day.date);
-        return {
-          ...day,
-          spots: day.spots.map((spot) => {
-            const aiSpot = aiDay?.spots?.find((item) => item.name === spot.name);
-            return {
-              ...spot,
-              reason: aiSpot?.reason?.trim() || spot.reason,
-              way: aiSpot?.way?.trim() || spot.way,
-              cameraSummary: aiSpot?.cameraSummary?.trim() || spot.cameraSummary,
-              tip: aiSpot?.tip?.trim() || spot.tip
-            };
-          })
-        };
-      }),
-      meta: {
-        ...plan.meta,
-        aiEnhanced: true
-      }
-    };
+    return parsed;
   } catch (error) {
-    logPlanExecution("warn", "AI 润色失败，保留原始摄影文案", toErrorMessage(error));
-    return plan;
+    logPlanExecution("warn", "AI 摄影分析失败，保留原始摄影结果", toErrorMessage(error));
+    return null;
   }
 }
 
@@ -281,6 +391,10 @@ export const photoWeekScenario: ScenarioDefinition<typeof photoWeekRequestSchema
         logPlanExecution("info", "开始拉取未来 7 天摄影相关天气数据");
         const weather = await context.weatherProvider.getForecast(input.location, input.timezone, 7);
         logPlanExecution("info", `天气数据拉取完成：${weather.daily.length} 天、${weather.hourly.length} 条逐小时记录`);
+        
+        const weatherLabel = weather.daily[0] ? summarizeDailyWeather(weather.daily[0]) : "";
+        emitPlanData("weather", { label: weatherLabel });
+        
         return weather;
       }),
       withExecutionStage(PHOTO_STAGE_IDS.geocoding, async () => {
@@ -293,6 +407,8 @@ export const photoWeekScenario: ScenarioDefinition<typeof photoWeekRequestSchema
         logPlanExecution("info", "开始搜索周边真实摄影点位");
         const resolvedPois = await loadPhotoPois(context, input.location, input.preferences?.mobilityRadiusKm ?? 12);
         logPlanExecution("info", `摄影点位筛选完成：共获得 ${resolvedPois.length} 个候选点`);
+        
+        emitPlanData("candidates", resolvedPois);
         return resolvedPois;
       })
     ]);
@@ -302,56 +418,43 @@ export const photoWeekScenario: ScenarioDefinition<typeof photoWeekRequestSchema
       throw new AppError("当前位置附近暂未找到可用于拍照推荐的真实 POI，请尝试扩大活动半径后重试。", 404);
     }
 
-    const preferredThemes = new Set(input.preferences?.themes ?? []);
     const usage = new Map<string, number>();
 
-    const days = await withExecutionStage(PHOTO_STAGE_IDS.navigation, async () => {
+    const candidateDays = await withExecutionStage(PHOTO_STAGE_IDS.navigation, async () => {
       logPlanExecution("info", `开始生成 ${forecast.daily.slice(0, 7).length} 天的摄影日程与导航链接`);
 
       const resolvedDays = forecast.daily.slice(0, 7).map((day) => {
         const relatedHour = forecast.hourly.find((hour) => hour.time.startsWith(day.date) && hour.time.endsWith("07:00"));
         const light = classifyLight(day, relatedHour);
-        const selectedPois = pois
+        const candidates = pois
           .map((poi) => ({
             poi,
-            score: scorePoi(day, poi, preferredThemes, usage.get(poi.id) ?? 0)
+            score: scorePoi(day, poi, usage.get(poi.id) ?? 0)
           }))
           .sort((left, right) => right.score - left.score)
-          .slice(0, 2)
-          .map((item) => item.poi);
+          .slice(0, 4)
+          .map((item) => buildPreparedPhotoSpot(day, item.poi, light, input.preferences?.cameraSkill, context.navigationProvider));
 
-        logPlanExecution("info", `${day.date} 分配了 ${selectedPois.length} 个摄影点位`);
+        const selectedCandidates = candidates.slice(0, 2);
+        for (const candidate of selectedCandidates) {
+          usage.set(candidate.poi.id, (usage.get(candidate.poi.id) ?? 0) + 1);
+        }
 
-        const spots = selectedPois.map((poi) => {
-          usage.set(poi.id, (usage.get(poi.id) ?? 0) + 1);
-          const bestTime = bestTimeForDay(day, poi.themes);
-          const camera = cameraPreset(light, input.preferences?.cameraSkill, poi.themes);
-
-          return {
-            name: poi.name,
-            reason: buildPhotoReason(day, poi),
-            bestTime,
-            way: buildPhotoWay(light, poi),
-            camera,
-            cameraSummary: `建议 ${camera.iso}、${camera.aperture}、${camera.shutter}、${camera.whiteBalance}，优先确保主体清晰和高光不过曝。`,
-            tip: buildPhotoTip(day, poi.themes),
-            categories: poi.themes,
-            navigationUrl: context.navigationProvider.buildNavigationUrl(poi.coordinates, poi.name),
-            poiCoordinates: poi.coordinates
-          };
-        });
+        logPlanExecution("info", `${day.date} 预生成了 ${candidates.length} 个真实摄影候选点位`);
 
         return {
           date: day.date,
           weather: summarizeDailyWeather(day),
-          spots,
-          tips: [buildPhotoTip(day, spots.flatMap((spot) => spot.categories))]
+          day,
+          candidates
         };
       });
 
       logPlanExecution("info", "本周摄影计划与导航链接生成完成");
       return resolvedDays;
     });
+
+    const days = candidateDays.map((day) => buildPhotoDay(day, day.candidates.slice(0, 2)));
 
     const basePlan: PhotoWeekPlan = {
       type: "photo_week",
@@ -373,16 +476,36 @@ export const photoWeekScenario: ScenarioDefinition<typeof photoWeekRequestSchema
 
     if (!context.aiProvider) {
       markExecutionStage(PHOTO_STAGE_IDS.ai, "skipped");
-      logPlanExecution("info", "未启用 AI 润色，直接返回基于真实数据的结果", undefined, PHOTO_STAGE_IDS.ai);
+      logPlanExecution("info", "未启用 AI 综合分析，直接返回基于真实数据的结果", undefined, PHOTO_STAGE_IDS.ai);
       return basePlan;
     }
 
     return await withExecutionStage(PHOTO_STAGE_IDS.ai, async () => {
-      logPlanExecution("info", "开始执行 AI 摄影文案润色");
-      const enhanced = await enhancePlan(context, basePlan);
+      logPlanExecution("info", "开始执行 AI 摄影偏好分析");
+      const aiAnalysis = await analyzePhotoCandidates(context, input, candidateDays);
+      if (!aiAnalysis) {
+        logPlanExecution("info", "AI 未产出可用摄影分析结果，已保留原始计划");
+        return basePlan;
+      }
+
+      const aiTips = aiAnalysis.tips?.filter(Boolean).slice(0, 4);
+      const enhanced: PhotoWeekPlan = {
+        ...basePlan,
+        tips: aiTips && aiTips.length > 0 ? aiTips : basePlan.tips,
+        days: candidateDays.map((day) => {
+          const aiDay = aiAnalysis.days?.find((item) => item.date === day.date);
+          const orderedCandidates = orderPreparedPhotoSpots(day.candidates, aiDay?.spots);
+          return buildPhotoDay(day, orderedCandidates, aiDay?.spots);
+        }),
+        meta: {
+          ...basePlan.meta,
+          aiEnhanced: true
+        }
+      };
+
       logPlanExecution(
         "info",
-        enhanced.meta.aiEnhanced ? "AI 摄影文案润色完成" : "AI 未产出可用结果，已保留原始摄影文案"
+        enhanced.meta.aiEnhanced ? "AI 摄影分析完成" : "AI 未产出可用结果，已保留原始摄影文案"
       );
       return enhanced;
     });
