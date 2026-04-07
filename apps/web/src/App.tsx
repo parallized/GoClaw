@@ -16,8 +16,14 @@ import { FormSection, TimeWindowControl, TerrainControl, PhotoThemesControl, Pho
 import { NavigationStack, type CollectionState, type ReservationTarget } from "./components/NavigationStack";
 import { ScenarioStep } from "./components/ScenarioStep";
 import { fetchScenarios, streamPlan } from "./lib/api";
-import { defaultPhotoForm, defaultRunForm, defaultScenarioId } from "./lib/constants";
+import { defaultScenarioId } from "./lib/constants";
 import { detectLocation } from "./lib/geolocation";
+import {
+  loadPersistedPhotoForm,
+  loadPersistedRunForm,
+  savePersistedPhotoForm,
+  savePersistedRunForm
+} from "./lib/preference-storage";
 
 function writeExecutionLogToConsole(entry: PlanExecutionLogEntry, stageTitle?: string) {
   const time = new Date(entry.timestamp).toLocaleTimeString("zh-CN", { hour12: false });
@@ -59,8 +65,8 @@ const emptyPoiCandidates: PlanCandidatesDataPayload = {
 export function App() {
   const [scenarios, setScenarios] = useState<ScenarioManifest[]>([]);
   const [scenarioId, setScenarioId] = useState<ScenarioId>(defaultScenarioId);
-  const [runForm, setRunForm] = useState<RunPlanRequest>(defaultRunForm);
-  const [photoForm, setPhotoForm] = useState<PhotoWeekRequest>(defaultPhotoForm);
+  const [runForm, setRunForm] = useState<RunPlanRequest>(() => loadPersistedRunForm());
+  const [photoForm, setPhotoForm] = useState<PhotoWeekRequest>(() => loadPersistedPhotoForm());
   const [result, setResult] = useState<PlanResult | null>(null);
   const [executionStages, setExecutionStages] = useState<PlanExecutionStage[]>([]);
   const [executionStageStatuses, setExecutionStageStatuses] = useState<Record<string, PlanExecutionStageStatus>>({});
@@ -134,6 +140,14 @@ export function App() {
   useEffect(() => () => {
     abortControllerRef.current?.abort();
   }, []);
+
+  useEffect(() => {
+    savePersistedRunForm(runForm);
+  }, [runForm]);
+
+  useEffect(() => {
+    savePersistedPhotoForm(photoForm);
+  }, [photoForm]);
 
   const activeScenario = useMemo(
     () => scenarios.find((s) => s.id === scenarioId) ?? null,

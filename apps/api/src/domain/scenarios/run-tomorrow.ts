@@ -162,15 +162,6 @@ function buildRouteFactSuffix(slot: ScheduledRouteSlot): string {
   return `建议 ${slot.recommendedTime} 出发，在 ${slot.timeWindow.from}-${slot.timeWindow.to} 完成；这个时段体感 ${slot.hour.apparentTemperatureC.toFixed(0)}℃、降水 ${slot.hour.precipitationProbability.toFixed(0)}%、UV ${slot.hour.uvIndex.toFixed(1)}。`;
 }
 
-function mergeAiRouteWhy(aiWhy: string | undefined, poi: PointOfInterest, slot: ScheduledRouteSlot): string {
-  const trimmed = aiWhy?.trim();
-  if (!trimmed) {
-    return buildRouteWhy(poi, slot);
-  }
-
-  return `${trimmed.replace(/[。；;，,\s]+$/u, "")}。${buildRouteFactSuffix(slot)}`;
-}
-
 function buildTips(bestTime: string, framedWindow: TimeWindow, temperatureMaxC: number, precipitationProbabilityMax: number, uvMax: number): string[] {
   const tips = [`建议在 ${bestTime} 前后 15 分钟热身，并尽量在 ${framedWindow.to} 前完成主要行程。`];
 
@@ -675,17 +666,12 @@ function buildRunRoutes(
   weatherData: {
     scoredHours: ScoredHour[];
     framedWindow: TimeWindow;
-  },
-  usedCopies?: Set<string>,
-  aiRoutes?: RunAiRoute[]
+  }
 ): RunRoute[] {
   const usedTimes = new Set<string>();
-  const aiWhyByName = new Map((aiRoutes ?? []).map((route) => [route.name, route.why]));
 
   return candidates.map((route) => {
     const slot = pickRouteSlot(route, weatherData.scoredHours, weatherData.framedWindow, usedTimes);
-    const baseWhy = buildRouteWhy(route.poi, slot);
-    const mergedWhy = mergeAiRouteWhy(aiWhyByName.get(route.poi.name), route.poi, slot);
 
     return {
       name: route.poi.name,
@@ -693,7 +679,7 @@ function buildRunRoutes(
       estTimeMin: route.estTimeMin,
       recommendedTime: slot.recommendedTime,
       timeWindow: slot.timeWindow,
-      why: usedCopies ? chooseDistinctCopy(mergedWhy, baseWhy, usedCopies) : baseWhy,
+      why: buildRouteWhy(route.poi, slot),
       tags: route.poi.terrains,
       navigationUrl: route.navigationUrl,
       routeSource: route.routeSource,

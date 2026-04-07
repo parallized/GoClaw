@@ -135,18 +135,17 @@ function buildCandidateDescription(candidate: PointOfInterestCandidate) {
   return `距你约 ${distanceLabel}，更偏 ${preferenceLabel} 场景。`;
 }
 
-function buildMarkerPanelText(data: any, candidate: PointOfInterestCandidate) {
+function buildMarkerPanelText(data: any, candidate: PointOfInterestCandidate, hasResult: boolean) {
   if (data?.why?.trim()) {
-    return data.why;
+    return data.why.trim();
   }
 
-  const photoCopy = [data?.reason, data?.way, data?.tip]
-    .map((item: unknown) => typeof item === "string" ? item.trim() : "")
-    .filter(Boolean)
-    .join(" ");
+  if (data?.reason?.trim()) {
+    return data.reason.trim();
+  }
 
-  if (photoCopy) {
-    return photoCopy;
+  if (hasResult) {
+    return "该地点是候选点，但本次未被 AI 选为最终推荐。";
   }
 
   return buildCandidateDescription(candidate);
@@ -535,7 +534,7 @@ export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunCh
              contentDiv.innerHTML = `
                 <div class="font-bold text-lg text-primary truncate">${candidate.name}</div>
                 <div class="text-sm text-secondary leading-relaxed max-h-[160px] overflow-y-auto no-scrollbar scroll-smooth">
-                  ${buildMarkerPanelText(data, candidate)}
+                  ${buildMarkerPanelText(data, candidate, Boolean(currentResult))}
                 </div>
                 
                 <div class="flex gap-2 mt-2 pt-2 border-t border-white/5">

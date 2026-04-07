@@ -486,10 +486,7 @@ async function analyzePhotoCandidates(
             description: poi.description ?? describePointOfInterest(poi),
             bestTime: spot.bestTime,
             categories: spot.categories,
-            reason: spot.reason,
-            way: spot.way,
-            cameraSummary: spot.cameraSummary,
-            tip: spot.tip
+            cameraSummary: spot.cameraSummary
           }))
         }))
       }),

@@ -4,6 +4,8 @@ import type { ScenarioPlannerContext } from "../scenario-definition";
 import { AppError } from "../../lib/errors";
 import { photoWeekScenario } from "./photo-week";
 
+const PHOTO_POI_NAMES = ["外滩", "豫园", "南京路步行街", "人民广场", "新天地", "田子坊"] as const;
+
 function makeDailyWeather(date: string, overrides?: Partial<import("../service-types").DailyWeatherPoint>) {
   return {
     date,
@@ -134,13 +136,13 @@ describe("photoWeekScenario - AI enhancement", () => {
       tips: ["AI增强提示1", "AI增强提示2"],
       days: makeForecast("2026-03-22").daily.map((day) => ({
         date: day.date,
-        spots: [{
-          name: "外滩",
-          reason: day.date === "2026-03-22" ? "AI润色的拍摄理由" : `${day.date} 的 AI 理由`,
-          way: day.date === "2026-03-22" ? "AI润色的拍摄方式" : `${day.date} 的 AI 方式`,
-          cameraSummary: day.date === "2026-03-22" ? "AI润色的参数建议" : `${day.date} 的 AI 参数`,
-          tip: day.date === "2026-03-22" ? "AI润色的小贴士" : `${day.date} 的 AI 提示`
-        }]
+        spots: PHOTO_POI_NAMES.map((name, index) => ({
+          name,
+          reason: day.date === "2026-03-22" && name === "外滩" ? "AI润色的拍摄理由" : `${day.date} ${name} 的 AI 理由`,
+          way: day.date === "2026-03-22" && name === "外滩" ? "AI润色的拍摄方式" : `${day.date} ${name} 的 AI 方式`,
+          cameraSummary: day.date === "2026-03-22" && name === "外滩" ? "AI润色的参数建议" : `${day.date} ${name} 的 AI 参数`,
+          tip: day.date === "2026-03-22" && name === "外滩" ? "AI润色的小贴士" : `${day.date} ${name} 的 AI 提示`
+        }))
       }))
     });
 
@@ -246,13 +248,13 @@ describe("photoWeekScenario - AI enhancement", () => {
       tips: ["fenced tip"],
       days: makeForecast("2026-03-22").daily.map((day) => ({
         date: day.date,
-        spots: [{
-          name: "外滩",
-          reason: `${day.date} 的 fenced 理由`,
-          way: `${day.date} 的 fenced 方式`,
-          cameraSummary: `${day.date} 的 fenced 参数`,
-          tip: `${day.date} 的 fenced 提示`
-        }]
+        spots: PHOTO_POI_NAMES.map((name) => ({
+          name,
+          reason: `${day.date} ${name} 的 fenced 理由`,
+          way: `${day.date} ${name} 的 fenced 方式`,
+          cameraSummary: `${day.date} ${name} 的 fenced 参数`,
+          tip: `${day.date} ${name} 的 fenced 提示`
+        }))
       }))
     })}\n\`\`\``;
     const aiProvider: AiProvider = {
