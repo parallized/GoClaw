@@ -136,6 +136,7 @@ export type PoiCandidateQualityTier = z.infer<typeof poiCandidateQualityTierSche
 export const pointOfInterestCandidateSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
+  description: z.string().min(1).optional(),
   coordinates: coordinatesSchema,
   distanceMeters: z.number().nonnegative(),
   category: z.enum(["run", "photo"]),

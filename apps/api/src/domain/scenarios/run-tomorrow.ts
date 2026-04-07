@@ -13,6 +13,7 @@ import type { HourlyWeatherPoint, PointOfInterest } from "../service-types";
 import type { ScenarioDefinition, ScenarioPlannerContext } from "../scenario-definition";
 import { extractJsonBlock, safeJsonParse } from "../../lib/json-parser";
 import { AppError, toErrorMessage } from "../../lib/errors";
+import { describePointOfInterest, withPoiDescription } from "../../lib/poi-description";
 import { emitPlanData, logPlanExecution, markExecutionStage, withExecutionStage } from "../../lib/plan-execution";
 import { scoreRunHour, summarizeDailyWeather } from "../../lib/weather";
 
@@ -333,7 +334,7 @@ function withQualityTier(
   qualityTier: "raw" | "usable" | "recommended"
 ): PointOfInterest {
   return {
-    ...poi,
+    ...withPoiDescription(poi),
     qualityTier
   };
 }
@@ -608,9 +609,11 @@ async function analyzeRunCandidates(
         "你是跑步路线分析师，需要根据用户偏好标签，从已经测距成功的真实候选路线中挑选并排序最多 3 条推荐路线。",
         "用户选择的 terrain 标签只用于分析与排序，不是 POI 获取约束。",
         "不得新增、删除或改写候选路线的名称、距离、预计时长、路线来源或标签。",
+        "如果候选提供了 poiDescription，必须把它视为理解场景的核心事实来源，不要只根据地点名字和标签套模板。",
         "只能从给定候选 routes 中选择 name；如果偏好标签为空，就优先考虑完成度、路线多样性和稳妥性。",
         "总理由需要说明为何在给定天气窗口下，这组路线更贴近用户偏好。",
         "每条路线 why 只描述体验角度与偏好匹配，不要写具体时间、温度、降水、UV 数值，也不要和总理由重复。",
+        "不同路线 why 不能只是替换名字后复用同一模板，至少要引用各自 poiDescription 中不同的场景信息。",
         "输出 JSON，字段仅包含 reason、routes、tips；routes 内仅包含 name 和 why。"
       ].join(""),
       user: JSON.stringify({
@@ -625,6 +628,7 @@ async function analyzeRunCandidates(
         weatherSummary: weatherData.weatherLabel,
         routes: candidates.map((route) => ({
           name: route.poi.name,
+          poiDescription: route.poi.description ?? describePointOfInterest(route.poi),
           distanceKm: route.distanceKm,
           estTimeMin: route.estTimeMin,
           tags: route.poi.terrains,

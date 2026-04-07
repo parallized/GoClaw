@@ -130,7 +130,12 @@ describe("photoWeekScenario - AI enhancement", () => {
 
     const aiProvider: AiProvider = {
       name: "mock-ai",
-      generateText: async () => aiResponse
+      generateText: async (input) => {
+        expect(input.system).toContain("description");
+        expect(input.user).toContain('"description"');
+        expect(input.user).toContain("外滩");
+        return aiResponse;
+      }
     };
 
     const context = makeContext(aiProvider);
@@ -167,6 +172,45 @@ describe("photoWeekScenario - AI enhancement", () => {
     // Should still get a valid plan, just not AI-enhanced
     expect(result.type).toBe("photo_week");
     expect(result.days.length).toBe(7);
+  });
+
+  it("falls back to distinct base reasons when AI reuses the same photo reason template", async () => {
+    const aiResponse = JSON.stringify({
+      tips: ["注意天气变化"],
+      days: [{
+        date: "2026-03-22",
+        spots: [
+          {
+            name: "外滩",
+            reason: "作为初学者，建议提前 15 分钟到场观察光位和人流，再决定主机位。",
+            way: "统一模板",
+            cameraSummary: "统一模板",
+            tip: "统一模板"
+          },
+          {
+            name: "豫园",
+            reason: "作为初学者，建议提前 15 分钟到场观察光位和人流，再决定主机位。",
+            way: "统一模板",
+            cameraSummary: "统一模板",
+            tip: "统一模板"
+          }
+        ]
+      }]
+    });
+
+    const aiProvider: AiProvider = {
+      name: "mock-ai",
+      generateText: async () => aiResponse
+    };
+
+    const result = await photoWeekScenario.plan(makeContext(aiProvider), {
+      location: { latitude: 31.23, longitude: 121.47 },
+      timezone: "Asia/Shanghai"
+    });
+
+    const firstDay = result.days.find((d) => d.date === "2026-03-22");
+    expect(firstDay?.spots.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(firstDay?.spots.map((spot) => spot.reason)).size).toBe(firstDay?.spots.length);
   });
 
   it("falls back gracefully when AI throws an error", async () => {

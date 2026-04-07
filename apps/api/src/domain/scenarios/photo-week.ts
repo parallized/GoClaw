@@ -14,6 +14,7 @@ import type { DailyWeatherPoint, PointOfInterest } from "../service-types";
 import type { ScenarioDefinition, ScenarioPlannerContext } from "../scenario-definition";
 import { extractJsonBlock, safeJsonParse } from "../../lib/json-parser";
 import { AppError, toErrorMessage } from "../../lib/errors";
+import { describePointOfInterest, withPoiDescription } from "../../lib/poi-description";
 import { emitPlanData, logPlanExecution, markExecutionStage, withExecutionStage } from "../../lib/plan-execution";
 import { classifyLight, getWeatherLabel, summarizeDailyWeather } from "../../lib/weather";
 
@@ -108,19 +109,21 @@ function bestTimeForDay(day: DailyWeatherPoint, themes: PhotoTheme[]): string {
 }
 
 function buildPhotoReason(day: DailyWeatherPoint, poi: PointOfInterest): string {
+  const description = poi.description ?? describePointOfInterest(poi);
+
   if (poi.themes.includes("waterfront")) {
-    return `这一天 ${summarizeDailyWeather(day)}，水边题材更容易获得通透层次与倒影。`;
+    return `${description} 这一天 ${summarizeDailyWeather(day)}，更适合围绕水边层次、倒影和开阔视野组织画面。`;
   }
 
   if (poi.themes.includes("architecture")) {
-    return `这一天 ${summarizeDailyWeather(day)}，建筑题材更适合拍线条、秩序感和城市空间。`;
+    return `${description} 这一天 ${summarizeDailyWeather(day)}，更适合突出建筑线条、秩序感和城市空间关系。`;
   }
 
   if (poi.themes.includes("nature")) {
-    return `这一天 ${summarizeDailyWeather(day)}，自然景观更容易得到柔和色彩和稳定光线。`;
+    return `${description} 这一天 ${summarizeDailyWeather(day)}，更容易拍到柔和色彩、景深层次和稳定光线。`;
   }
 
-  return `这一天 ${summarizeDailyWeather(day)}，这里能兼顾天气稳定性与出片效率。`;
+  return `${description} 这一天 ${summarizeDailyWeather(day)}，这里能兼顾天气稳定性与出片效率。`;
 }
 
 function buildPhotoWay(light: ReturnType<typeof classifyLight>, poi: PointOfInterest): string {
@@ -235,6 +238,27 @@ function normalizePhotoAiAnalysis(value: unknown): PhotoAiAnalysis | null {
   };
 }
 
+function normalizeCopy(text: string): string {
+  return text.replace(/[\s，。、“”‘’：:；;、,.!?！？（）()\-—]/g, "").toLowerCase();
+}
+
+function chooseDistinctCopy(candidate: string | undefined, fallback: string, used: Set<string>): string {
+  const trimmed = candidate?.trim();
+  if (!trimmed) {
+    used.add(normalizeCopy(fallback));
+    return fallback;
+  }
+
+  const normalized = normalizeCopy(trimmed);
+  if (!normalized || normalized.length < 8 || used.has(normalized)) {
+    used.add(normalizeCopy(fallback));
+    return fallback;
+  }
+
+  used.add(normalized);
+  return trimmed;
+}
+
 async function loadPhotoPois(context: ScenarioPlannerContext, location: { latitude: number; longitude: number }, radiusKm: number) {
   const radiusMeters = Math.min(30000, Math.max(4000, radiusKm * 1000));
   logPlanExecution("info", `按 ${radiusMeters} 米半径搜索摄影点位`);
@@ -258,7 +282,7 @@ async function loadPhotoPois(context: ScenarioPlannerContext, location: { latitu
 
 function buildPhotoCandidatePool(pois: readonly PointOfInterest[]): PlanCandidatesDataPayload {
   const usableCandidates = pois.map((poi) => ({
-    ...poi,
+    ...withPoiDescription(poi),
     qualityTier: "usable" as const
   }));
 
@@ -406,11 +430,12 @@ function buildPhotoDay(
   aiSpots?: PhotoAiSpot[]
 ) {
   const aiByName = new Map((aiSpots ?? []).map((spot) => [spot.name, spot]));
+  const usedReasons = new Set<string>();
   const spots: PhotoSpot[] = selectedCandidates.map(({ spot }) => {
     const aiSpot = aiByName.get(spot.name);
     return {
       ...spot,
-      reason: aiSpot?.reason?.trim() || spot.reason,
+      reason: chooseDistinctCopy(aiSpot?.reason, spot.reason, usedReasons),
       way: aiSpot?.way?.trim() || spot.way,
       cameraSummary: aiSpot?.cameraSummary?.trim() || spot.cameraSummary,
       tip: aiSpot?.tip?.trim() || spot.tip
@@ -442,8 +467,10 @@ async function analyzePhotoCandidates(
         "你是摄影规划分析师，需要结合用户主题偏好，从每天已经准备好的真实候选点位中挑选并排序最多 2 个拍摄点。",
         "用户选择的 themes 标签只用于分析与排序，不是 POI 获取约束。",
         "不得新增日期、地点、天气、参数或题材标签，也不得改写候选点名称。",
+        "如果候选提供了 description，必须把它视为地点理解的核心事实来源，不能只根据名字和 themes 写泛化文案。",
         "每一天只能从对应 candidates 里选择 spot.name；如果用户未给 themes，就优先考虑天气契合度、拍摄效率和一周内的整体多样性。",
         "reason、way、cameraSummary、tip 只能围绕已给事实做更贴合用户偏好的表达，不要虚构新的相机数值。",
+        "不同 spot 的 reason 不能套用同一个模板，至少要引用各自 description 中不同的场景信息。",
         "输出 JSON，字段仅包含 tips 和 days；days 内仅包含 date 和 spots，spots 内仅包含 name、reason、way、cameraSummary、tip。"
       ].join(""),
       user: JSON.stringify({
@@ -454,8 +481,9 @@ async function analyzePhotoCandidates(
         days: candidateDays.map((day) => ({
           date: day.date,
           weather: day.weather,
-          candidates: day.candidates.map(({ spot }) => ({
+          candidates: day.candidates.map(({ poi, spot }) => ({
             name: spot.name,
+            description: poi.description ?? describePointOfInterest(poi),
             bestTime: spot.bestTime,
             categories: spot.categories,
             reason: spot.reason,

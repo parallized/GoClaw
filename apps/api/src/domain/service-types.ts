@@ -49,6 +49,7 @@ export interface PointOfInterest {
   source?: string;
   matchReason?: string;
   qualityTier?: PoiCandidateQualityTier;
+  description?: string;
 }
 
 export interface RoutePlan {

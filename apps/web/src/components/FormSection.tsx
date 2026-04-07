@@ -118,18 +118,21 @@ function openTimeInput(input: HTMLInputElement | null) {
 
 function buildCandidateTags(candidate: PointOfInterestCandidate): string[] {
   const structured = candidate.category === "run" ? candidate.terrains : candidate.themes;
-  const meta = [candidate.source, candidate.matchReason, candidate.qualityTier].filter(Boolean) as string[];
-  return [...structured, ...meta, ...candidate.tags].filter(Boolean).slice(0, 8);
+  const district = candidate.rawTags.district?.trim();
+  return [...structured, district].filter(Boolean).slice(0, 8) as string[];
 }
 
 function buildCandidateDescription(candidate: PointOfInterestCandidate) {
+  if (candidate.description?.trim()) {
+    return candidate.description;
+  }
+
   const distanceLabel = candidate.distanceMeters >= 1000
     ? `${(candidate.distanceMeters / 1000).toFixed(1)} km`
     : `${Math.round(candidate.distanceMeters)} m`;
   const preferenceTags = candidate.category === "run" ? candidate.terrains : candidate.themes;
   const preferenceLabel = preferenceTags.length > 0 ? preferenceTags.join(" / ") : "待 AI 进一步分析";
-  const matchLabel = candidate.matchReason ? `命中依据：${candidate.matchReason}` : "已纳入候选池，等待进一步筛选";
-  return `距你约 ${distanceLabel}，当前归类为 ${preferenceLabel}。${matchLabel}。`;
+  return `距你约 ${distanceLabel}，更偏 ${preferenceLabel} 场景。`;
 }
 
 /* ── Run preferences form components ── */
@@ -318,7 +321,6 @@ export function PhotoThemesControl({ selected, onChange }: { selected: string[];
 
 export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunChange, onPhotoChange, geoStatus, onRelocate, isGenerating, currentWeather, poiCandidates, result, onNavigate }: FormSectionProps) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [activePoi, setActivePoi] = useState<any>(null);
   const [candidateView, setCandidateView] = useState<"usable" | "all">("usable");
   const location = scenarioId === "run_tomorrow" ? runForm.location : photoForm.location;
 
@@ -377,7 +379,7 @@ export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunCh
       });
 
       map.on('click', () => {
-         setActivePoi(null);
+         if (infoWindowRef.current) infoWindowRef.current.close();
       });
 
       mapRef.current = map;
@@ -510,9 +512,38 @@ export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunCh
              const currentResult = resultRef.current;
              const selectedData = selectedPoisRef.current.get(candidate.name);
              
-             setActivePoi({ candidate, data: currentResult && selectedData ? selectedData : null });
+             const data = currentResult && selectedData ? selectedData : null;
+             const contentDiv = document.createElement("div");
+             contentDiv.className = "bg-surface/95 backdrop-blur-3xl rounded-3xl p-5 shadow-[0_24px_64px_rgba(0,0,0,0.8)] border border-primary/20 flex flex-col gap-3 w-72 pointer-events-auto shrink-0";
+             contentDiv.innerHTML = `
+                <div class="font-bold text-lg text-primary truncate">${candidate.name}</div>
+                <div class="text-sm text-secondary leading-relaxed max-h-[160px] overflow-y-auto no-scrollbar scroll-smooth">
+                  ${data?.why || data?.tip || data?.reason || buildCandidateDescription(candidate)}
+                </div>
+                
+                <div class="flex gap-2 mt-2 pt-2 border-t border-white/5">
+                  <button id="amap-route-btn" class="flex-1 py-2.5 bg-white/10 text-primary border border-white/20 font-bold rounded-xl text-sm hover:bg-white/20 transition-all shadow-md cursor-pointer flex items-center justify-center gap-2">在地图上寻路</button>
+                  ${data?.navigationUrl ? `<a href="${data.navigationUrl}" target="_blank" class="w-11 h-11 rounded-xl bg-white/5 flex items-center justify-center text-tertiary hover:text-primary transition-colors border border-white/10 shrink-0 cursor-pointer">↗</a>` : ''}
+                </div>
+             `;
+             
+             contentDiv.querySelector("#amap-route-btn")?.addEventListener("click", () => {
+                 if (infoWindowRef.current) infoWindowRef.current.close();
+                 drawRoute(locationRef.current, candidate.coordinates);
+             });
+
+             if (!infoWindowRef.current) {
+                infoWindowRef.current = new (window as any).AMap.InfoWindow({
+                   isCustom: true,
+                   autoMove: false,
+                   offset: new (window as any).AMap.Pixel(0, -10)
+                });
+             }
+             infoWindowRef.current.setContent(contentDiv);
+             infoWindowRef.current.open(mapRef.current, [candidate.coordinates.longitude, candidate.coordinates.latitude]);
+
              mapRef.current.panTo([candidate.coordinates.longitude, candidate.coordinates.latitude]);
-             setTimeout(() => mapRef.current.panBy(0, 100), 100);
+             setTimeout(() => mapRef.current.panBy(0, 160), 50);
          });
       }
       newMarkersMap.set(candidate.name, marker);
@@ -588,7 +619,7 @@ export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunCh
           )}
 
           {/* Floating Location Badge */}
-          <div className={`mt-auto pointer-events-auto flex items-center justify-center w-full transition-opacity duration-300 ${activePoi ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+          <div className="mt-auto pointer-events-auto flex items-center justify-center w-full">
             <div className="bg-surface/80 backdrop-blur-lg px-4 py-2 rounded-full border border-white/10 shadow-lg flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className={`w-2 h-2 rounded-full ${geoStatus === "detecting" ? "bg-accent-indigo animate-pulse" : "bg-accent-green"}`}></div>
               <div className="text-[12px] text-primary tracking-tight truncate max-w-[200px]">
@@ -606,41 +637,6 @@ export function FormSection({ scenarioId, themeMode, runForm, photoForm, onRunCh
               </button>
             </div>
           </div>
-
-          {/* Active POI Bottom Sheet */}
-          {activePoi && (
-            <div className="absolute inset-x-0 bottom-4 px-4 sm:px-6 w-full max-w-md mx-auto pointer-events-auto z-50">
-              <div className="bg-surface/95 backdrop-blur-3xl rounded-3xl p-5 shadow-[0_24px_64px_rgba(0,0,0,0.8)] border border-primary/20 flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-8 duration-300">
-                 <div className="flex justify-between items-start gap-2">
-                   <div className="flex-1 min-w-0">
-                      <h3 className="font-bold text-lg text-primary truncate">{activePoi.candidate.name}</h3>
-                      <div className="flex gap-1.5 flex-wrap mt-1.5">
-                         {buildCandidateTags(activePoi.candidate).map((t: string) => (
-                            <span key={t} className="px-1.5 py-0.5 rounded-md text-[10px] bg-white/5 text-secondary border border-white/5">{t}</span>
-                         ))}
-                      </div>
-                   </div>
-                   <button onClick={() => setActivePoi(null)} className="shrink-0 w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-tertiary hover:text-primary transition-colors cursor-pointer border border-white/5">
-                      <Icon icon="lucide:x" />
-                   </button>
-                 </div>
-                 <div className="text-sm text-secondary leading-relaxed max-h-[160px] overflow-y-auto no-scrollbar scroll-smooth">
-                   {activePoi.data?.why || activePoi.data?.tip || activePoi.data?.reason || buildCandidateDescription(activePoi.candidate)}
-                 </div>
-                 
-                 <div className="flex gap-2 mt-2 pt-2 border-t border-white/5">
-                   <button onClick={() => { setActivePoi(null); drawRoute(locationRef.current, activePoi.candidate.coordinates); }} className="flex-1 h-11 bg-primary text-base-bg font-bold rounded-xl text-sm transition-opacity hover:opacity-90 flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-primary/20">
-                     <Icon icon="lucide:route" className="text-base" /> 在地图上寻路
-                   </button>
-                   {activePoi.data.navigationUrl && (
-                      <a href={activePoi.data.navigationUrl} target="_blank" rel="noreferrer" className="w-11 h-11 rounded-xl bg-white/5 flex items-center justify-center text-tertiary hover:text-primary transition-colors border border-white/10 shrink-0 cursor-pointer">
-                        <Icon icon="lucide:external-link" className="text-base" />
-                      </a>
-                   )}
-                 </div>
-              </div>
-            </div>
-          )}
         </div>
       </div>
   );

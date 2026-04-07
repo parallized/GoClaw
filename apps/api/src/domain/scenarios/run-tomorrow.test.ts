@@ -159,7 +159,10 @@ describe("runTomorrowScenario - AI enhancement", () => {
       generateText: async (input) => {
         expect(input.temperature).toBe(0.45);
         expect(input.system).toContain("跑步路线分析师");
+        expect(input.system).toContain("poiDescription");
         expect(input.user).toContain('"terrain":["waterfront"]');
+        expect(input.user).toContain('"poiDescription"');
+        expect(input.user).toContain("滨江步道");
         expect(input.user).toContain('"routes"');
         return aiResponse;
       }
