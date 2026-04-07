@@ -54,8 +54,8 @@ type RunAiRoute = {
 
 type RunAiAnalysis = {
   reason?: string;
-  routes?: RunAiRoute[];
-  tips?: string[];
+  routes: RunAiRoute[];
+  tips: string[];
 };
 
 type RunDistanceProfile = {
@@ -326,6 +326,61 @@ function dedupeTextList(items: string[]): string[] {
   return result;
 }
 
+function asTrimmedString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function normalizeRunAiRoutes(value: unknown): RunAiRoute[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return [];
+    }
+
+    const record = item as Record<string, unknown>;
+    const name = asTrimmedString(record.name);
+    if (!name) {
+      return [];
+    }
+
+    return [{
+      name,
+      why: asTrimmedString(record.why)
+    }];
+  });
+}
+
+function normalizeStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => asTrimmedString(item))
+    .filter((item): item is string => Boolean(item));
+}
+
+function normalizeRunAiAnalysis(value: unknown): RunAiAnalysis | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  return {
+    reason: asTrimmedString(record.reason),
+    routes: normalizeRunAiRoutes(record.routes),
+    tips: normalizeStringList(record.tips)
+  };
+}
+
 function chooseDistinctCopy(candidate: string | undefined, fallback: string, used: Set<string>): string {
   const trimmed = candidate?.trim();
   if (!trimmed) {
@@ -475,7 +530,12 @@ async function analyzeRunCandidates(
   candidates: RoutedCandidate[]
 ): Promise<RunAiAnalysis | null> {
   try {
-    const response = await context.aiProvider.generateText({
+    const aiProvider = context.aiProvider;
+    if (!aiProvider) {
+      return null;
+    }
+
+    const response = await aiProvider.generateText({
       system: [
         "你是跑步路线分析师，需要根据用户偏好标签，从已经测距成功的真实候选路线中挑选并排序最多 3 条推荐路线。",
         "用户选择的 terrain 标签只用于分析与排序，不是 POI 获取约束。",
@@ -506,13 +566,14 @@ async function analyzeRunCandidates(
       temperature: 0.45
     });
 
-    const parsed = safeJsonParse<RunAiAnalysis>(extractJsonBlock(response));
-    if (!parsed) {
+    const parsed = safeJsonParse<unknown>(extractJsonBlock(response));
+    const normalized = normalizeRunAiAnalysis(parsed);
+    if (!normalized) {
       logPlanExecution("warn", "AI 返回内容无法解析，保留原始跑步结果");
       return null;
     }
 
-    return parsed;
+    return normalized;
   } catch (error) {
     logPlanExecution("warn", "AI 路线分析失败，保留原始跑步结果", toErrorMessage(error));
     return null;
@@ -769,7 +830,7 @@ export const runTomorrowScenario: ScenarioDefinition<typeof runPlanRequestSchema
       const reason = chooseDistinctCopy(aiAnalysis.reason, basePlan.reason, usedCopies);
       const aiOrderedCandidates = orderRunCandidates(routedCandidates, aiAnalysis.routes);
       const aiRoutes = buildRunRoutes(aiOrderedCandidates, weatherData, usedCopies, aiAnalysis.routes);
-      const aiTips = dedupeTextList(aiAnalysis.tips?.filter(Boolean) ?? []).slice(0, 4);
+      const aiTips = dedupeTextList(aiAnalysis.tips).slice(0, 4);
       const enhanced: RunPlan = {
         ...basePlan,
         reason,

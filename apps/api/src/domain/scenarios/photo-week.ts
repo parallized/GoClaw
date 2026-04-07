@@ -46,12 +46,12 @@ type PhotoAiSpot = {
 
 type PhotoAiDay = {
   date: string;
-  spots?: PhotoAiSpot[];
+  spots: PhotoAiSpot[];
 };
 
 type PhotoAiAnalysis = {
-  tips?: string[];
-  days?: PhotoAiDay[];
+  tips: string[];
+  days: PhotoAiDay[];
 };
 
 function manifest() {
@@ -138,7 +138,7 @@ function buildPhotoWay(light: ReturnType<typeof classifyLight>, poi: PointOfInte
   return "利用云层或城市元素做画面分区，保持前中后景层次，让画面更完整。";
 }
 
-function buildPhotoTip(day: DailyWeatherPoint, themes: PhotoTheme[]): string {
+function buildPhotoTip(day: DailyWeatherPoint, themes: readonly string[]): string {
   if (themes.includes("night")) {
     return "夜景优先准备三脚架或稳定支撑，避免慢快门糊片。";
   }
@@ -152,6 +152,86 @@ function buildPhotoTip(day: DailyWeatherPoint, themes: PhotoTheme[]): string {
   }
 
   return "建议提前 15 分钟到场观察光位和人流，再决定主机位。";
+}
+
+function asTrimmedString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function normalizeStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => asTrimmedString(item))
+    .filter((item): item is string => Boolean(item));
+}
+
+function normalizePhotoAiSpots(value: unknown): PhotoAiSpot[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return [];
+    }
+
+    const record = item as Record<string, unknown>;
+    const name = asTrimmedString(record.name);
+    if (!name) {
+      return [];
+    }
+
+    return [{
+      name,
+      reason: asTrimmedString(record.reason),
+      way: asTrimmedString(record.way),
+      cameraSummary: asTrimmedString(record.cameraSummary),
+      tip: asTrimmedString(record.tip)
+    }];
+  });
+}
+
+function normalizePhotoAiDays(value: unknown): PhotoAiDay[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return [];
+    }
+
+    const record = item as Record<string, unknown>;
+    const date = asTrimmedString(record.date);
+    if (!date) {
+      return [];
+    }
+
+    return [{
+      date,
+      spots: normalizePhotoAiSpots(record.spots)
+    }];
+  });
+}
+
+function normalizePhotoAiAnalysis(value: unknown): PhotoAiAnalysis | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  return {
+    tips: normalizeStringList(record.tips),
+    days: normalizePhotoAiDays(record.days)
+  };
 }
 
 async function loadPhotoPois(context: ScenarioPlannerContext, location: { latitude: number; longitude: number }, radiusKm: number) {
@@ -308,7 +388,7 @@ function buildPhotoDay(
   aiSpots?: PhotoAiSpot[]
 ) {
   const aiByName = new Map((aiSpots ?? []).map((spot) => [spot.name, spot]));
-  const spots = selectedCandidates.map(({ spot }) => {
+  const spots: PhotoSpot[] = selectedCandidates.map(({ spot }) => {
     const aiSpot = aiByName.get(spot.name);
     return {
       ...spot,
@@ -318,12 +398,13 @@ function buildPhotoDay(
       tip: aiSpot?.tip?.trim() || spot.tip
     };
   });
+  const categories = spots.flatMap((spot) => spot.categories);
 
   return {
     date: candidateDay.date,
     weather: candidateDay.weather,
     spots,
-    tips: [buildPhotoTip(candidateDay.day, spots.flatMap((spot) => spot.categories))]
+    tips: [buildPhotoTip(candidateDay.day, categories)]
   };
 }
 
@@ -333,7 +414,12 @@ async function analyzePhotoCandidates(
   candidateDays: CandidatePhotoDay[]
 ): Promise<PhotoAiAnalysis | null> {
   try {
-    const response = await context.aiProvider.generateText({
+    const aiProvider = context.aiProvider;
+    if (!aiProvider) {
+      return null;
+    }
+
+    const response = await aiProvider.generateText({
       system: [
         "你是摄影规划分析师，需要结合用户主题偏好，从每天已经准备好的真实候选点位中挑选并排序最多 2 个拍摄点。",
         "用户选择的 themes 标签只用于分析与排序，不是 POI 获取约束。",
@@ -364,13 +450,14 @@ async function analyzePhotoCandidates(
       temperature: 0.45
     });
 
-    const parsed = safeJsonParse<PhotoAiAnalysis>(extractJsonBlock(response));
-    if (!parsed) {
+    const parsed = safeJsonParse<unknown>(extractJsonBlock(response));
+    const normalized = normalizePhotoAiAnalysis(parsed);
+    if (!normalized) {
       logPlanExecution("warn", "AI 返回内容无法解析，保留原始摄影结果");
       return null;
     }
 
-    return parsed;
+    return normalized;
   } catch (error) {
     logPlanExecution("warn", "AI 摄影分析失败，保留原始摄影结果", toErrorMessage(error));
     return null;
@@ -488,12 +575,12 @@ export const photoWeekScenario: ScenarioDefinition<typeof photoWeekRequestSchema
         return basePlan;
       }
 
-      const aiTips = aiAnalysis.tips?.filter(Boolean).slice(0, 4);
+      const aiTips = aiAnalysis.tips.slice(0, 4);
       const enhanced: PhotoWeekPlan = {
         ...basePlan,
         tips: aiTips && aiTips.length > 0 ? aiTips : basePlan.tips,
         days: candidateDays.map((day) => {
-          const aiDay = aiAnalysis.days?.find((item) => item.date === day.date);
+          const aiDay = aiAnalysis.days.find((item) => item.date === day.date);
           const orderedCandidates = orderPreparedPhotoSpots(day.candidates, aiDay?.spots);
           return buildPhotoDay(day, orderedCandidates, aiDay?.spots);
         }),

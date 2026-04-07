@@ -11,6 +11,8 @@ import { AmapPoiProvider } from "./infrastructure/poi/amap";
 import { FallbackPoiProvider } from "./infrastructure/poi/fallback";
 import { OverpassPoiProvider } from "./infrastructure/poi/overpass";
 import { OsrmRoutingProvider } from "./infrastructure/routing/osrm";
+import { FallbackWeatherProvider } from "./infrastructure/weather/fallback";
+import { MetNoWeatherProvider } from "./infrastructure/weather/met-no";
 import { OpenMeteoWeatherProvider } from "./infrastructure/weather/open-meteo";
 
 const nominatimProvider = new NominatimGeocodingProvider();
@@ -36,8 +38,13 @@ const poiProvider = isAmapWebServiceEnabled()
     )
   : overpassProvider;
 
+const weatherProvider = new FallbackWeatherProvider(
+  new OpenMeteoWeatherProvider(),
+  new MetNoWeatherProvider()
+);
+
 const plannerContext = {
-  weatherProvider: new OpenMeteoWeatherProvider(),
+  weatherProvider,
   geocodingProvider,
   poiProvider,
   routingProvider: new OsrmRoutingProvider(),
@@ -53,4 +60,3 @@ app.listen(env.apiPort);
 
 
 console.log(`GoClaw API 已启动：http://localhost:${env.apiPort}`);
-

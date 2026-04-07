@@ -102,7 +102,8 @@ export class OpenMeteoWeatherProvider implements WeatherProvider {
       try {
         logPlanExecution("info", "开始请求 Open-Meteo 天气服务", contextDetail);
         const response = await fetchJson<OpenMeteoResponse>(`https://api.open-meteo.com/v1/forecast?${params.toString()}`, {
-          retries: 1
+          retries: 0,
+          timeoutMs: 8_000
         });
 
         const forecast = writeCache(key, {
