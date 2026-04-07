@@ -105,6 +105,15 @@ function parseCoordinates(location: string | undefined): Coordinates | null {
   return { latitude, longitude };
 }
 
+function normalizeAmapText(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
 function includesAny(text: string, keywords: readonly string[]): boolean {
   return keywords.some((keyword) => text.includes(keyword));
 }
@@ -168,19 +177,25 @@ function normalize(
   query: AmapSearchQuery
 ): PointOfInterest | null {
   const coordinates = parseCoordinates(poi.location);
-  const name = poi.name?.trim();
+  const name = normalizeAmapText(poi.name);
   if (!coordinates || !name) {
     return null;
   }
 
-  const text = [name, poi.type, poi.address, poi.adname].filter(Boolean).join(" ");
+  const type = normalizeAmapText(poi.type);
+  const typecode = normalizeAmapText(poi.typecode);
+  const province = normalizeAmapText(poi.pname);
+  const city = normalizeAmapText(poi.cityname);
+  const district = normalizeAmapText(poi.adname);
+  const address = normalizeAmapText(poi.address);
+  const text = [name, type, address, district].filter(Boolean).join(" ");
   const rawTags = {
-    type: poi.type ?? "",
-    typecode: poi.typecode ?? "",
-    province: poi.pname ?? "",
-    city: poi.cityname ?? "",
-    district: poi.adname ?? "",
-    address: poi.address ?? ""
+    type: type ?? "",
+    typecode: typecode ?? "",
+    province: province ?? "",
+    city: city ?? "",
+    district: district ?? "",
+    address: address ?? ""
   };
 
   const parsedDistance = Number(poi.distance);
@@ -189,7 +204,7 @@ function normalize(
     : haversineDistanceMeters(origin, coordinates);
 
   return {
-    id: poi.id?.trim() || `${category}-${name}`,
+    id: normalizeAmapText(poi.id) || `${category}-${name}`,
     name,
     coordinates: { ...coordinates, label: name },
     distanceMeters,

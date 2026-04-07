@@ -46,6 +46,18 @@ function makePoi(id: string, name: string): PointOfInterest {
   };
 }
 
+function makePoiWithRawTagArrays(id: string, name: string): PointOfInterest {
+  return {
+    ...makePoi(id, name),
+    rawTags: {
+      type: "风景名胜;公园广场;公园",
+      district: "西湖区",
+      address: [] as unknown as string,
+      city: [] as unknown as string
+    }
+  };
+}
+
 function makeForecast(startDate: string): WeatherForecast {
   const daily = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(startDate);
@@ -318,6 +330,52 @@ describe("photoWeekScenario - AI enhancement", () => {
     });
 
     expect(callCount).toBe(2);
+    expect(result.days.length).toBe(7);
+    expect(result.days[0]?.spots.length).toBeGreaterThan(0);
+  });
+
+  it("handles photo POIs whose raw tags contain non-string values", async () => {
+    const forecast = makeForecast("2026-03-22");
+    const pois = [
+      makePoiWithRawTagArrays("p1", "外滩"),
+      makePoi("p2", "豫园"),
+      makePoi("p3", "南京路步行街"),
+      makePoi("p4", "人民广场"),
+      makePoi("p5", "新天地"),
+      makePoi("p6", "田子坊")
+    ];
+
+    const context: ScenarioPlannerContext = {
+      weatherProvider: {
+        name: "mock-weather",
+        getForecast: async () => forecast
+      },
+      geocodingProvider: {
+        name: "mock-geo",
+        reverseGeocode: async () => ({ city: "上海", displayName: "上海市" })
+      },
+      poiProvider: {
+        name: "mock-poi",
+        searchRunPois: async () => [],
+        searchPhotoPois: async () => pois
+      },
+      routingProvider: {
+        name: "mock-routing",
+        getWalkingRoute: async () => ({ distanceMeters: 3000, durationSeconds: 2400, source: "mock" })
+      },
+      navigationProvider: {
+        name: "mock-nav",
+        buildNavigationUrl: (_coords, label) => `https://nav.test/${label}`
+      },
+      aiProvider: makePhotoAiProvider(forecast.daily.map((day) => day.date), [...PHOTO_POI_NAMES])
+    };
+
+    const result = await photoWeekScenario.plan(context, {
+      location: { latitude: 31.23, longitude: 121.47 },
+      timezone: "Asia/Shanghai"
+    });
+
+    expect(result.type).toBe("photo_week");
     expect(result.days.length).toBe(7);
     expect(result.days[0]?.spots.length).toBeGreaterThan(0);
   });

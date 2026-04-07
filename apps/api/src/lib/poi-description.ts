@@ -25,8 +25,12 @@ function formatDistance(distanceMeters: number): string {
   return `距离当前位置约 ${Math.round(distanceMeters)} 米`;
 }
 
-function cleanText(value: string | undefined): string | undefined {
-  const trimmed = value?.trim();
+function cleanText(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
   return trimmed ? trimmed : undefined;
 }
 
