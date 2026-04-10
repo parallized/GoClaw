@@ -98,3 +98,7 @@ bun run build
 # 自动测试第一视角 AI 对接连通性
 bun run test:ai
 ```
+
+## 🤝 友链
+
+- [linux.do](https://linux.do/)
